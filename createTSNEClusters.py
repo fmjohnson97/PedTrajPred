@@ -46,6 +46,7 @@ def get_args():
     parser.add_argument('--num_frames', default=1, type=int,
                         help='number of frames of people to use for opentraj')
     parser.add_argument('--seq_len', default=8, type=int)
+    parser.add_argument('--socialN', default=3, type=int)
     parser.add_argument('--collapse_method', default='squeeze', choices=('squeeze','l2','x','y'),
                         help='how to deal with the fact that TSNE only takes 2d arrays (how to get rid \
                                 of the 3rd Dim')
@@ -73,7 +74,6 @@ def getData(args):
             data = OpTrajData(name, args.mode, None ,input_window=args.num_frames, output_window=args.seq_len)
             dloader=DataLoader(data, batch_size=1, shuffle=False, drop_last=False)
             vel, pos=processData(dloader, args)
-            breakpoint()
             fullData.extend(pos)
             velData.extend(vel)
         # in the format input, target, frames
@@ -86,8 +86,11 @@ def getData(args):
 def processData(dloader, args):
     data=[]
     vels=[]
+    mindata=np.inf
+    maxdata=-np.inf
+    minvels=np.inf
+    maxvels=-np.inf
     for i,info in enumerate(dloader):
-        #breakpoint()
         if args.mode in ['by_N_frame','by_human']:
             d_Traj=info[0][0].squeeze().numpy()
         elif args.mode=='by_frame':
@@ -99,7 +102,25 @@ def processData(dloader, args):
             v_Traj=np.diff(d_Traj, axis=1)
         else:
             v_Traj=np.diff(d_Traj, axis=0)
+
+        # breakpoint()
+        if args.mode=='by_N_frame':
+            if len(d_Traj.shape)>2 and d_Traj.shape[0]>=args.socialN:
+                d_Traj=d_Traj[:args.socialN]
+                v_Traj=v_Traj[:args.socialN]
+            else:
+                d_Traj=np.array([])
+                v_Traj=np.array([])
+
         if len(d_Traj.shape)>1 and d_Traj.shape[-2]>=args.seq_len:
+            if mindata>np.min(d_Traj):
+                mindata=np.min(d_Traj)
+            if maxdata<np.max(d_Traj):
+                maxdata=np.max(d_Traj)
+            if minvels>np.min(v_Traj):
+                minvels=np.min(v_Traj)
+            if maxvels<np.max(v_Traj):
+                maxvels=np.max(v_Traj)
             if args.collapse_method=='l2':
                 data.append(np.linalg.norm(d_Traj[:args.seq_len],2, axis=1))
                 vels.append(np.linalg.norm(v_Traj[:args.seq_len-1], 2, axis=1))
@@ -116,23 +137,48 @@ def processData(dloader, args):
                 else:
                     data.append(d_Traj[:args.seq_len])
                     vels.append(v_Traj[:args.seq_len-1])
-    breakpoint()
-    data=np.array(data, dtype=object)
-    data=2.*( data- np.min(data))/np.ptp(data)-1
-    vels = np.array(vels, dtype=object)
-    vels = 2. * (vels - np.min(vels)) / np.ptp(vels) - 1
+    # breakpoint()
+    data=np.stack(data)
+    data=2. * (data- mindata) / (maxdata-mindata) - 1
+    vels = np.stack(vels)
+    vels = 2. * (vels - minvels) / (maxvels-minvels) - 1
     return vels, data
+    
+def filterNumPeople(pos, vel):
+    topop=[]
+    tosplit=[]
+    for i,p in enumerate(pos):
+        if len(p)<args.socialN or len(p.shape)<2:
+            topop.append(i)
+        if len(p.shape)>2 and len(p)>args.socialN:
+            tosplit.append(i)
+    for i in tosplit:
+        # ind=[range(x,x+args.socialN) for x in range(len(pos[i])-len(pos[i])%args.socialN)]
+        pos[i]=pos[i][:args.socialN]
+    pos=np.delete(pos,topop, axis=0)
+    vel=np.delete(vel,topop, axis=0)
+    return pos, vel
 
 if __name__=='__main__':
     args=get_args()
     velData, fullData=getData(args)
+    # breakpoint()
 
     if args.data_type==['velocity', 'distance']:
         print('Using',str(len(velData)),'trajectories for TSNE')
     else:
         print('Using',str(len(fullData)),'trajectories for TSNE')
-
+    
+    # if args.mode=='by_N_frame':
+    #     fullData, velData = filterNumPeople(fullData, velData)
+    
     if args.collapse_method == 'squeeze':
+        # if len(fullData.shape)<2:
+        #     fullData=np.array([d.reshape(len(d),-1) for d in fullData])
+        #     if args.data_type!='distance':
+        #         velData = np.array([d.reshape(len(d),-1) for d in velData])
+        #
+        # else:
         fullData=fullData.reshape(len(fullData), -1)
         if args.data_type!='distance':
             velData = velData.reshape(len(velData), -1)
@@ -153,17 +199,17 @@ if __name__=='__main__':
     plt.show()
 
     print(max(kmeans.labels_))
-    for i in range(max(kmeans.labels_)+1):
-        clusters=[x for j,x in enumerate(fullData) if kmeans.labels_[j]==i]
-        for c in clusters:
-            x = [p for j, p in enumerate(c) if j % 2 == 1]
-            y = [p for j, p in enumerate(c) if j % 2 == 0]
-            plt.plot(x,y)
-            plt.scatter(x[0],y[0],c='r')
-        plt.title('Cluster '+str(i))
-        plt.show()
+    # for i in range(max(kmeans.labels_)+1):
+    #     clusters=[x for j,x in enumerate(fullData) if kmeans.labels_[j]==i]
+    #     for c in clusters:
+    #         x = [p for j, p in enumerate(c) if j % 2 == 1]
+    #         y = [p for j, p in enumerate(c) if j % 2 == 0]
+    #         plt.plot(x,y)
+    #         plt.scatter(x[0],y[0],c='r')
+    #     plt.title('Cluster '+str(i))
+    #     plt.show()
 
-    while (True):
+    while (False):
         coords = []
         fig = plt.figure()
         cid = fig.canvas.mpl_connect('button_press_event', onclick)

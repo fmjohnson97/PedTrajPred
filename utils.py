@@ -18,7 +18,7 @@ def getData(args):
     elif args.data=='opentraj':
         data=[]
         for name in ['ETH', 'ETH_Hotel', 'UCY_Zara1', 'UCY_Zara2']:
-            data.append(OpTrajData(name, args.mode, image=args.image,input_window=args.num_frames, output_window=0))
+            data.append(OpTrajData(name, args.mode, image=args.image,input_window=args.num_frames, output_window=args.seq_len, filter=args.filterMissing))
     else:
         print(args.data,' is an invalid dataset')
         raise NotImplementedError
@@ -29,12 +29,21 @@ def batchify(inputs, args):
     # takes one trajectory and gets a window of input and output
     # then increments by one and does it again all the way down the traj
     # breakpoint()
-    inds=[range(x,x+args.seq_len) for x in range(len(inputs)-(args.seq_len+args.targ_len))]
+    inds=[range(x,x+args.num_frames) for x in range(len(inputs)-(args.num_frames+args.seq_len))]
     traj = inputs[inds,:]
-    inds = [range(x.stop,x.stop+args.targ_len) for x in inds]
+    inds = [range(x.stop,x.stop+args.seq_len) for x in inds]
     targs = inputs[inds,:]
     return traj, targs
 
+def social_batchify(inputs, args):
+    # takes one trajectory and gets a window of input and output
+    # then increments by one and does it again all the way down the traj
+    # breakpoint()
+    #inds=[range(x,x+args.num_frames) for x in range(inputs.shape[-2]-(args.num_frames+args.seq_len))]
+    traj = inputs.squeeze(0)[:,:args.num_frames,:]
+    #inds = [range(x.stop,x.stop+args.seq_len) for x in inds]
+    targs = inputs.squeeze(0)[:,args.num_frames:,:]
+    return traj, targs
 
 def processData(args, inputs, doAugs=True):
     traj_augs=TrajAugs(args=args)
