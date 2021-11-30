@@ -67,7 +67,7 @@ class OpenTrajData(Dataset):
             data = self.filterAndFlatten(data)
         if self.image:
             data['frames']=self.getImages(data)
-
+        data['index']=[item]
         return data
 
     def getImages(self,data):
@@ -104,7 +104,7 @@ class OpenTrajData(Dataset):
         return data
 
     def getOneHumanTraj(self,item):
-        dataset=[]
+        dataset={}
         group=list(self.groups.keys())[item]
         data=self.trajectory.get_group(group)
         dataset['frames']=data['frame_id'].tolist()

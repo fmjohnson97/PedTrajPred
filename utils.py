@@ -1,6 +1,7 @@
 from TrajNet.TrajNetData import TrajNetData
 from TrajNet.trajnetplusplusbaselines.trajnetbaselines.lstm.data_load_utils import prepare_data
-from OpenTraj.opTrajData import OpTrajData
+#from OpenTraj.opTrajData import OpTrajData
+from openTrajData import OpenTrajData
 from trajAugmentations import TrajAugs
 import torch
 import numpy as np
@@ -18,7 +19,7 @@ def getData(args):
     elif args.data=='opentraj':
         data=[]
         for name in ['ETH', 'ETH_Hotel', 'UCY_Zara1', 'UCY_Zara2']:
-            data.append(OpTrajData(name, args.mode, image=args.image,input_window=args.num_frames, output_window=args.seq_len, filter=args.filterMissing))
+            data.append(OpenTrajData(name, args.mode, image=args.image,input_window=args.num_frames, output_window=args.seq_len, filter=args.filterMissing))
     else:
         print(args.data,' is an invalid dataset')
         raise NotImplementedError
@@ -28,22 +29,21 @@ def getData(args):
 def batchify(inputs, args):
     # takes one trajectory and gets a window of input and output
     # then increments by one and does it again all the way down the traj
-    # breakpoint()
-    inds=[range(x,x+args.num_frames) for x in range(len(inputs)-(args.num_frames+args.seq_len))]
+    #breakpoint()
+    inds = [range(x,x+args.num_frames) for x in range(len(inputs)-(args.num_frames+args.seq_len))]
     traj = inputs[inds,:]
     inds = [range(x.stop,x.stop+args.seq_len) for x in inds]
     targs = inputs[inds,:]
-    return traj, targs
+    srcMask=None
+    return traj, targs, srcMask
 
 def social_batchify(inputs, args):
     # takes one trajectory and gets a window of input and output
-    # then increments by one and does it again all the way down the traj
-    # breakpoint()
-    #inds=[range(x,x+args.num_frames) for x in range(inputs.shape[-2]-(args.num_frames+args.seq_len))]
-    traj = inputs.squeeze(0)[:,:args.num_frames,:]
-    #inds = [range(x.stop,x.stop+args.seq_len) for x in inds]
-    targs = inputs.squeeze(0)[:,args.num_frames:,:]
-    return traj, targs
+    #breakpoint()
+    traj = inputs[:,:args.num_frames,:]
+    targs = inputs[:,args.num_frames:,:]
+    srcMask=None
+    return traj, targs, srcMask#.float()
 
 def processData(args, inputs, doAugs=True):
     traj_augs=TrajAugs(args=args)
@@ -58,6 +58,7 @@ def processData(args, inputs, doAugs=True):
 
     ### way #3; seems most standard so lets use this for now
     torch.nn.functional.normalize(trajectory)
+    breakpoint()
 
     if trajectory.shape[1]<args.seq_len:
         return None, None, trajectory, ims

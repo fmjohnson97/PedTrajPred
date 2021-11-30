@@ -21,12 +21,19 @@ class PositionalEncoding(nn.Module):
         pe[:, 0, 1::2] = torch.cos(position * div_term)
         self.register_buffer('pe', pe)
 
-    def forward(self, x):
+    def forward(self, x, posEncInds):
         """
         Args:
             x: Tensor, shape [seq_len, batch_size, embedding_dim]
         """
-        x = x + self.pe[:x.size(0)]
+        if posEncInds is None:
+            x = x + self.pe[:x.size(0)]
+        else:
+            #breakpoint()
+            # this section does the position encoding relative to the start of the entire sequence
+            # of data from the dataset instead of locally within a batch
+            times=[self.pe[i] for i in posEncInds]
+            x = x+self.pe[posEncInds[0]:posEncInds[0]+x.size(0)]
         return self.dropout(x)
 
 
@@ -45,17 +52,50 @@ class SimpleTransformer(nn.Module):
         self.init_weights()
 
     def init_weights(self):
-        initrange = 0.1
+        #initrange = 0.1
         # self.enc.weight.data.uniform_(-initrange, initrange)
-        self.dec.bias.data.zero_()
-        self.dec.weight.data.uniform_(-initrange, initrange)
+        #self.dec.bias.data.zero_()
+        #self.dec.weight.data.uniform_(-initrange, initrange)
+        for p in self.trans_enc.parameters():
+            if p.dim()>1:
+                nn.init.xavier_uniform_(p)
+        
+        for p in self.dec.parameters():
+            if p.dim()>1:
+                nn.init.xavier_uniform_(p)
+                
 
-    def forward(self, x, mask):
+    def forward(self, x, mask, posEncInds=None):
         # x = self.enc(x) * math.sqrt(x)
-        x = self.pos_encoder(x)
+        x = self.pos_encoder(x, posEncInds)
         emb = self.trans_enc(x, mask)
         output = self.dec(emb)
         return output, emb
+        
+        
+class FullTransformer(nn.Module):
+    def __init__(self, args):
+        super(FullTransformer, self).__init__()
+        feat_dim, hidden_dim, out_dim = args.feat_dim, args.hidden_dim, args.seq_len
+        nheads, nlayers = args.nheads, args.nlayers
+        
+        self.init_weights()
+        
+    def init_weights(self):
+        #initrange = 0.1
+        # self.enc.weight.data.uniform_(-initrange, initrange)
+        #self.dec.bias.data.zero_()
+        #self.dec.weight.data.uniform_(-initrange, initrange)
+        for p in self.trans_enc.parameters():
+            if p.dim()>1:
+                nn.init.xavier_uniform_(p)
+        
+        for p in self.dec.parameters():
+            if p.dim()>1:
+                nn.init.xavier_uniform_(p)
+        
+    def forward(x, tgt, posEncInds, srcMask, tgtMask):
+        return None
 
 
 def set_params():
@@ -117,18 +157,20 @@ def train_loop(args, model, train_loader):
     opt=optim.SGD(model.parameters(),lr=4e-5)
     total_loss=[]
     for i, inputs in enumerate(train_loader):
-        trajectory, ims = inputs
-        if args.mode=='by_N_frame' and len(trajectory.shape)>2:
-            traj, target = social_batchify(trajectory, args)
-        elif len(trajectory)>0:
-            traj, target = batchify(trajectory, args)
+        #breakpoint()
+        trajectory= inputs['pos'].squeeze(0)
+        items=inputs['index']
+        if args.mode=='by_frame' and len(trajectory.shape)>2:
+            traj, target, srcMask = social_batchify(trajectory, args)
+        elif trajectory.nelement()>2*(args.num_frames+args.seq_len):
+            traj, target, srcMask = batchify(trajectory, args)
         else:
-            traj, target = [], []
+            traj, target, srcMask = [], [], []
         # breakpoint()
         if len(traj)>0:
-            mask = generate_square_subsequent_mask(len(traj)).cuda()
+            srcMask = generate_square_subsequent_mask(len(traj)).cuda().float()
             traj = torch.transpose(traj, -1,-2)#np.transpose(traj, (0, -1, -2))
-            output, embedding = model(traj.float().cuda(), mask.float())
+            output, embedding = model(traj.float().cuda(), srcMask, items)
             l=loss(torch.transpose(output,-1,-2),target.float().cuda())
             opt.zero_grad()
             l.backward()
@@ -143,38 +185,39 @@ def test_loop(args, model, test_loader):
     total_loss=[]
     model.eval()
     for i, inputs in enumerate(test_loader):
-        trajectory, ims = inputs
-        if args.mode=='by_N_frame' and len(trajectory.shape)>2:
-            traj, target = social_batchify(trajectory, args)
-        elif len(trajectory)>0:
-            traj, target = batchify(trajectory, args)
+        trajectory= inputs['pos'].squeeze(0)
+        items=inputs['index']
+        if args.mode=='by_frame' and len(trajectory.shape)>2:
+            traj, target, srcMask = social_batchify(trajectory, args)
+        elif trajectory.nelement()>2*(args.num_frames+args.seq_len):
+            traj, target, srcMask = batchify(trajectory, args)
         else:
-            traj, target = [], []
+            traj, target, srcMask = [], [], []
         if len(traj)>0:
             #breakpoint()
-            mask = generate_square_subsequent_mask(len(traj)).cuda()
+            srcMask = generate_square_subsequent_mask(len(traj)).cuda().float()
             traj = torch.transpose(traj, -1,-2)#np.transpose(traj, (0, -1, -2))
-            output, embedding = model(traj.float().cuda(), mask.float())
+            output, embedding = model(traj.float().cuda(), srcMask, items)
             l=loss(torch.transpose(output,-1,-2),target.float().cuda())
             total_loss.append(l.item())
             
         if i%75==0:
             fig=plt.figure()
             #breakpoint()
-            plt.scatter(traj[0,:,0], traj[0,:,1], c='g')
+            # plt.scatter(traj[0,:,0], traj[0,:,1], c='g')
             for t in target:
                 plt.scatter(t[:,0], t[:,1], c='b')
             for o in torch.transpose(output,-1,-2).cpu():
                 plt.scatter(o[:,0], o[:,1], c='tab:orange')
             plt.title('GT (blue) vs Pred (orange) Trajectories')
-            plt.savefig('social_simpleTransfPredictions'+str(i)+'_'+str(args.nlayers)+'_'+str(args.nheads)+'_'+str(args.hidden_dim)+'.png')
+            plt.savefig('social_glob_simpleTransfPredictions'+str(i)+'_'+str(args.nlayers)+'_'+str(args.nheads)+'_'+str(args.hidden_dim)+'.png')
             
     print('Test Loss:',np.mean(total_loss))
     
     fig=plt.figure()
     plt.plot(total_loss)
-    plt.title('Simple Transformer Test Loss, Avg Val= '+str(np.mean(total_loss[-1])))
-    plt.savefig('social_simpleTransTestLoss_'+str(args.nlayers)+'_'+str(args.nheads)+'_'+str(args.hidden_dim)+'.png')
+    plt.title('Simple Transformer Test Loss, Avg Val= '+str(np.mean(total_loss)))
+    plt.savefig('social_glob_simpleTransTestLoss_'+str(args.nlayers)+'_'+str(args.nheads)+'_'+str(args.hidden_dim)+'.png')
 
 
 if __name__ == '__main__':
@@ -203,10 +246,11 @@ if __name__ == '__main__':
 
         trackTotLoss.append(np.mean(epochLoss))
         print('Epoch Loss:',str(trackTotLoss[-1]))
-        
+        torch.save(model,'social_glob_simpleTransf_'+str(args.nlayers)+'_'+str(args.nheads)+'_'+str(args.hidden_dim)+'.pt')
+    
     plt.plot(trackTotLoss)
     plt.title('Simple Trans Model Loss')
-    plt.savefig('social_simpleTransformerLoss_'+str(args.nlayers)+'_'+str(args.nheads)+'_'+str(args.hidden_dim)+'.png')
+    plt.savefig('social_glob_simpleTransformerLoss_'+str(args.nlayers)+'_'+str(args.nheads)+'_'+str(args.hidden_dim)+'.png')
 
     loader = DataLoader(train_data[-1],
                         shuffle=False,
@@ -214,4 +258,4 @@ if __name__ == '__main__':
                         pin_memory=True)
     test_loop(args, model, loader)
     
-    torch.save(model,'social_simpleTransf_'+str(args.nlayers)+'_'+str(args.nheads)+'_'+str(args.hidden_dim)+'.pt')
+    
