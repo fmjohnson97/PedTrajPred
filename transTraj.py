@@ -26,7 +26,7 @@ class PositionalEncoding(nn.Module):
         Args:
             x: Tensor, shape [seq_len, batch_size, embedding_dim]
         """
-        if posEncInds is None:
+        if True:#posEncInds is None:
             x = x + self.pe[:x.size(0)]
         else:
             #breakpoint()
@@ -40,9 +40,10 @@ class PositionalEncoding(nn.Module):
 class SimpleTransformer(nn.Module):
     def __init__(self, args):
         super(SimpleTransformer, self).__init__()
-        feat_dim, hidden_dim, out_dim = args.feat_dim, args.hidden_dim, args.seq_len
+        feat_dim, hidden_dim, out_dim = args.feat_dim*2, args.hidden_dim, args.seq_len*2
         nheads, nlayers = args.nheads, args.nlayers
         dropout = args.dropout
+        self.embed=nn.Sequential(nn.Linear(feat_dim,feat_dim))#, nn.LeakyReLU(), nn.Linear(feat_dim, feat_dim))
         self.pos_encoder = PositionalEncoding(feat_dim, dropout)
         self.encoder_layers = nn.TransformerEncoderLayer(feat_dim, nheads, hidden_dim)
         self.trans_enc = nn.TransformerEncoder(self.encoder_layers, nlayers)
@@ -66,7 +67,9 @@ class SimpleTransformer(nn.Module):
                 
 
     def forward(self, x, mask, posEncInds=None):
+        # breakpoint()
         # x = self.enc(x) * math.sqrt(x)
+        x=self.embed(x)
         x = self.pos_encoder(x, posEncInds)
         emb = self.trans_enc(x, mask)
         output = self.dec(emb)
@@ -99,7 +102,7 @@ class FullTransformer(nn.Module):
 
 
 def set_params():
-    parser = argparse.ArgumentParser(description="Implementation of SwAV")
+    parser = argparse.ArgumentParser(description="Social Transformer")
 
     #####################
     #### Data Params ####
@@ -118,7 +121,9 @@ def set_params():
                         help="whether to return images or not")
     parser.add_argument('--socialN', default=3, type=int)
     parser.add_argument("--filterMissing", type=bool, default=True,
-                    help="whether to return images or not")
+                        help="whether to return images or not")
+    parser.add_argument('--saveName', default='social_simpleTransfPredictions',
+                        help='prefix to name all the save files')
 
 
     #####################
@@ -139,9 +144,12 @@ def set_params():
                         help="number of total epochs to run")
     parser.add_argument("--batch_size", default=1, type=int,
                         help="batch size per gpu, i.e. how many unique instances per gpu")
-    parser.add_argument("--base_lr", default=4.8, type=float, help="base learning rate")
-    parser.add_argument("--final_lr", type=float, default=0.000001, help="final learning rate")
     parser.add_argument("--seed", type=int, default=31, help="seed")
+    parser.add_argument("--warmup_epochs", default=10, type=int, help="number of warmup epochs")
+    parser.add_argument("--start_warmup", default=0, type=float,
+                        help="initial warmup learning rate")
+    parser.add_argument("--base_lr", default=4.8, type=float, help="base learning rate")
+    parser.add_argument("--final_lr", type=float, default=1e-5, help="final learning rate")
 
     return parser.parse_args()
 
@@ -151,7 +159,7 @@ def generate_square_subsequent_mask(sz: int):
     return torch.triu(torch.ones(sz, sz) * float('-inf'), diagonal=1)
     #return torch.ones(sz,sz)
     
-def train_loop(args, model, train_loader):
+def train_loop(args, model, train_loader, lr_schedule, iter):
     loss=nn.MSELoss()
     #ToDo: put optimizer outside and keep track of lr schedule
     opt=optim.SGD(model.parameters(),lr=4e-5)
@@ -159,25 +167,31 @@ def train_loop(args, model, train_loader):
     for i, inputs in enumerate(train_loader):
         #breakpoint()
         trajectory= inputs['pos'].squeeze(0)
-        items=inputs['index']
+        items=None#inputs['index']
         if args.mode=='by_frame' and len(trajectory.shape)>2:
             traj, target, srcMask = social_batchify(trajectory, args)
         elif trajectory.nelement()>2*(args.num_frames+args.seq_len):
             traj, target, srcMask = batchify(trajectory, args)
         else:
             traj, target, srcMask = [], [], []
-        # breakpoint()
         if len(traj)>0:
+            #breakpoint()
+            # for param_group in opt.param_groups:
+            #     param_group["lr"] = lr_schedule[iter]
+
             srcMask = generate_square_subsequent_mask(len(traj)).cuda().float()
-            traj = torch.transpose(traj, -1,-2)#np.transpose(traj, (0, -1, -2))
+            #traj = torch.transpose(traj, -1,-2)#np.transpose(traj, (0, -1, -2))
+            traj=traj.reshape(-1, 1, args.num_frames*2)
             output, embedding = model(traj.float().cuda(), srcMask, items)
-            l=loss(torch.transpose(output,-1,-2),target.float().cuda())
+            #l=loss(torch.transpose(output,-1,-2),target.float().cuda())
+            l=loss(output, target.reshape(-1,1,args.seq_len*2).float().cuda())
             opt.zero_grad()
             l.backward()
             #ToDo: clip gradnorm?
             opt.step()
             total_loss.append(l.item())
-    return model, total_loss
+            iter +=1
+    return model, total_loss, iter
     
 @torch.no_grad()
 def test_loop(args, model, test_loader):
@@ -186,7 +200,7 @@ def test_loop(args, model, test_loader):
     model.eval()
     for i, inputs in enumerate(test_loader):
         trajectory= inputs['pos'].squeeze(0)
-        items=inputs['index']
+        items=None#inputs['index']
         if args.mode=='by_frame' and len(trajectory.shape)>2:
             traj, target, srcMask = social_batchify(trajectory, args)
         elif trajectory.nelement()>2*(args.num_frames+args.seq_len):
@@ -194,68 +208,90 @@ def test_loop(args, model, test_loader):
         else:
             traj, target, srcMask = [], [], []
         if len(traj)>0:
-            #breakpoint()
+            breakpoint()
             srcMask = generate_square_subsequent_mask(len(traj)).cuda().float()
-            traj = torch.transpose(traj, -1,-2)#np.transpose(traj, (0, -1, -2))
+            #traj = torch.transpose(traj, -1,-2)#np.transpose(traj, (0, -1, -2))
+            traj=traj.reshape(-1, 1, args.num_frames*2)
             output, embedding = model(traj.float().cuda(), srcMask, items)
-            l=loss(torch.transpose(output,-1,-2),target.float().cuda())
+            #l=loss(torch.transpose(output,-1,-2),target.float().cuda())
+            l=loss(output, target.reshape(-1,1,args.seq_len*2).float().cuda())
             total_loss.append(l.item())
             
         if i%75==0:
             fig=plt.figure()
             #breakpoint()
-            # plt.scatter(traj[0,:,0], traj[0,:,1], c='g')
+            traj=traj.reshape(-1, args.num_frames, 2)
+            for t in traj:
+                plt.scatter(t[:,0], t[:,1], c='g')
             for t in target:
                 plt.scatter(t[:,0], t[:,1], c='b')
-            for o in torch.transpose(output,-1,-2).cpu():
+            for o in output.reshape(-1, args.seq_len, 2).cpu():
                 plt.scatter(o[:,0], o[:,1], c='tab:orange')
-            plt.title('GT (blue) vs Pred (orange) Trajectories')
-            plt.savefig('social_glob_simpleTransfPredictions'+str(i)+'_'+str(args.nlayers)+'_'+str(args.nheads)+'_'+str(args.hidden_dim)+'.png')
+            plt.title('Input (green) vs GT (blue) vs Pred (orange) Trajectories')
+            plt.savefig(args.saveName+str(i)+'_'+str(args.nlayers)+'_'+str(args.nheads)+'_'+str(args.hidden_dim)+'.png')
             
     print('Test Loss:',np.mean(total_loss))
     
     fig=plt.figure()
     plt.plot(total_loss)
     plt.title('Simple Transformer Test Loss, Avg Val= '+str(np.mean(total_loss)))
-    plt.savefig('social_glob_simpleTransTestLoss_'+str(args.nlayers)+'_'+str(args.nheads)+'_'+str(args.hidden_dim)+'.png')
+    plt.savefig(args.saveName+str(args.nlayers)+'_'+str(args.nheads)+'_'+str(args.hidden_dim)+'.png')
+
+def train(model, train_data, args):
+    #breakpoint()
+    data_len = sum([x.__len__() for x in train_data])
+    warmup_lr_schedule = np.linspace(args.start_warmup, args.base_lr, data_len * args.warmup_epochs)
+    iters = np.arange(data_len * (args.epochs - args.warmup_epochs))
+    cosine_lr_schedule = np.array([args.final_lr + 0.5 * (args.base_lr - args.final_lr) * (1 + math.cos(math.pi
+                * t / (data_len * (args.epochs - args.warmup_epochs)))) for t in iters])
+    lr_schedule = np.concatenate((warmup_lr_schedule, cosine_lr_schedule))
+    iter=0
+    trackTotLoss = []
+    for e in range(args.epochs):
+        print('============ Starting Epoch', str(e), '==============')
+        epochLoss = []
+        if type(train_data) == list:
+            for td in train_data:
+                loader = DataLoader(td,
+                                    shuffle=False,
+                                    batch_size=args.batch_size,
+                                    pin_memory=True)
+                model, totLoss, iter = train_loop(args, model, loader, lr_schedule, iter)
+                epochLoss.extend(totLoss)
+        else:
+            model, epochLoss = train_loop(args, model, train_data)
+
+        trackTotLoss.append(np.mean(epochLoss))
+        print('Epoch Loss:', str(trackTotLoss[-1]))
+        torch.save(model.state_dict(), args.saveName+ str(args.nlayers) + '_' + str(args.nheads) + '_' + str(
+            args.hidden_dim) + '.pt')
+
+    plt.plot(trackTotLoss)
+    plt.title('Simple Trans Model Loss')
+    plt.savefig(args.saveName + str(args.nlayers) + '_' + str(args.nheads) + '_' + str(
+        args.hidden_dim) + '.png')
+
+    return model
 
 
 if __name__ == '__main__':
     args = set_params()
 
     model = SimpleTransformer(args)
+    model.load_state_dict(torch.load('social_ShortLR_10_4_2_1024.pt'))
     model = model.float()
     model = model.cuda()
-    model.train()
+    # model.train()
 
     train_data = getData(args)
-    trackTotLoss=[]
-    for e in range(args.epochs):
-        print('============ Starting Epoch', str(e), '==============')
-        epochLoss=[]
-        if type(train_data) == list:
-            for td in train_data[:-1]:
-                loader= DataLoader(td,
-                    shuffle=False,
-                    batch_size=args.batch_size,
-                    pin_memory=True)
-                model, totLoss = train_loop(args, model, loader)
-                epochLoss.extend(totLoss)
-        else:
-            model, epochLoss = train_loop(args, model, train_data)
-
-        trackTotLoss.append(np.mean(epochLoss))
-        print('Epoch Loss:',str(trackTotLoss[-1]))
-        torch.save(model,'social_glob_simpleTransf_'+str(args.nlayers)+'_'+str(args.nheads)+'_'+str(args.hidden_dim)+'.pt')
-    
-    plt.plot(trackTotLoss)
-    plt.title('Simple Trans Model Loss')
-    plt.savefig('social_glob_simpleTransformerLoss_'+str(args.nlayers)+'_'+str(args.nheads)+'_'+str(args.hidden_dim)+'.png')
+    # model = train(model, train_data[:-1], args)
 
     loader = DataLoader(train_data[-1],
                         shuffle=False,
                         batch_size=args.batch_size,
+                        num_workers = 2,
                         pin_memory=True)
+    model.eval()
     test_loop(args, model, loader)
     
     
