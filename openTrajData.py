@@ -11,7 +11,7 @@ import torch
 class OpenTrajData(Dataset):
     def __init__(self, dataset, mode, image=False, input_window=8, output_window=12, filter=True):
         # self.root='/Users/faith_johnson/GitRepos/OpenTraj/'
-        self.root = '/home/faith/PycharmProjects/PedTrajPredDict/OpenTraj/'
+        self.root = '/Users/faith_johnson/GitRepos/PedTrajPred/OpenTraj/'
         self.name = dataset
         # H path, Vid Path, load_X arguments
         self.paths = {

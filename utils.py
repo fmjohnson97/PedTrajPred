@@ -1,5 +1,5 @@
-from TrajNet.TrajNetData import TrajNetData
-from TrajNet.trajnetplusplusbaselines.trajnetbaselines.lstm.data_load_utils import prepare_data
+#from TrajNet.TrajNetData import TrajNetData
+#from TrajNet.trajnetplusplusbaselines.trajnetbaselines.lstm.data_load_utils import prepare_data
 #from OpenTraj.opTrajData import OpTrajData
 from openTrajData import OpenTrajData
 from trajAugmentations import TrajAugs
@@ -11,9 +11,10 @@ from sklearn.cluster import KMeans
 
 def getData(args):
     if args.data=='trajnet++':
-        train_scenes, train_goals, _ = prepare_data('TrajNet/trajnetplusplusbaselines/DATA_BLOCK/trajdata',
-                                                    subset='/train/', sample=args.sample, goals=args.goals)
-        data=[TrajNetData(train_scenes)]
+        # train_scenes, train_goals, _ = prepare_data('TrajNet/trajnetplusplusbaselines/DATA_BLOCK/trajdata',
+        #                                             subset='/train/', sample=args.sample, goals=args.goals)
+        # data=[TrajNetData(train_scenes)]
+        pass
     elif args.data=='MOT':
         pass
     elif args.data=='opentraj':

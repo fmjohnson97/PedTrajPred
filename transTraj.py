@@ -179,12 +179,12 @@ def train_loop(args, model, train_loader, lr_schedule, iter):
             # for param_group in opt.param_groups:
             #     param_group["lr"] = lr_schedule[iter]
 
-            srcMask = generate_square_subsequent_mask(len(traj)).cuda().float()
+            srcMask = generate_square_subsequent_mask(len(traj)).float()
             #traj = torch.transpose(traj, -1,-2)#np.transpose(traj, (0, -1, -2))
             traj=traj.reshape(-1, 1, args.num_frames*2)
-            output, embedding = model(traj.float().cuda(), srcMask, items)
+            output, embedding = model(traj.float(), srcMask, items)
             #l=loss(torch.transpose(output,-1,-2),target.float().cuda())
-            l=loss(output, target.reshape(-1,1,args.seq_len*2).float().cuda())
+            l=loss(output, target.reshape(-1,1,args.seq_len*2).float())
             opt.zero_grad()
             l.backward()
             #ToDo: clip gradnorm?
@@ -209,12 +209,12 @@ def test_loop(args, model, test_loader):
             traj, target, srcMask = [], [], []
         if len(traj)>0:
             breakpoint()
-            srcMask = generate_square_subsequent_mask(len(traj)).cuda().float()
+            srcMask = generate_square_subsequent_mask(len(traj)).float()
             #traj = torch.transpose(traj, -1,-2)#np.transpose(traj, (0, -1, -2))
             traj=traj.reshape(-1, 1, args.num_frames*2)
-            output, embedding = model(traj.float().cuda(), srcMask, items)
+            output, embedding = model(traj.float(), srcMask, items)
             #l=loss(torch.transpose(output,-1,-2),target.float().cuda())
-            l=loss(output, target.reshape(-1,1,args.seq_len*2).float().cuda())
+            l=loss(output, target.reshape(-1,1,args.seq_len*2).float())
             total_loss.append(l.item())
             
         if i%75==0:
@@ -278,13 +278,13 @@ if __name__ == '__main__':
     args = set_params()
 
     model = SimpleTransformer(args)
-    model.load_state_dict(torch.load('social_ShortLR_10_4_2_1024.pt'))
+    # model.load_state_dict(torch.load('social_ShortLR_10_4_2_1024.pt'))
     model = model.float()
-    model = model.cuda()
-    # model.train()
+    model = model
+    model.train()
 
     train_data = getData(args)
-    # model = train(model, train_data[:-1], args)
+    model = train(model, train_data[:-1], args)
 
     loader = DataLoader(train_data[-1],
                         shuffle=False,
