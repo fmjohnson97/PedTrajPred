@@ -142,3 +142,4 @@ dmypy.json
 /OpenTraj/README.md
 /OpenTraj/requirements.txt
 /OpenTraj/setup.py
+/disentablement_pytorch

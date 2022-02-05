@@ -7,6 +7,7 @@ from OpenTraj.opentraj.toolkit.loaders.loader_crowds import load_crowds
 from collections import defaultdict
 from OpenTraj.utils import world2image
 import torch
+import random
 from itertools import combinations
 
 class SameSizeData(Dataset):
@@ -83,15 +84,21 @@ class SameSizeData(Dataset):
             #turns the dict into an array if not filter
             #or if filter, it gets rid of people not present in the entire sequence of frames
             data = self.filterLength(data)
-            data = self.getDistances(data)
-            if self.social_thresh is not None:
-                # using social groups
-                data = self.trimSocialGroups(data)
-            if self.traj_thresh is not None:
-                # using raw trajectories
-                data = self.collateRemainders(data)
-            if len(data['pos'])==0 and len(data['deltas'])==0:
-                data['frames']=np.array([])
+            if len(data['pos'])>1:
+                # breakpoint()
+                data = self.getSocialDistances(data)
+                data = self.getDistTrajs(data)
+                data = self.parameterize(data)
+                if self.social_thresh is not None:
+                    # trims down # of social groups returned
+                    data = self.trimSocialGroups(data)
+                if self.traj_thresh is not None:
+                    # trims down # of raw trajectory based groups returned
+                    data = self.collateRemainders(data)
+                if len(data['pos'])==0 and len(data['deltas'])==0:
+                    data['frames']=np.array([])
+            else:
+                data = self.reset(data,['deltas', 'groupIDs', 'distTraj', 'diffs', 'spline'])
 
         if self.image:
             data['frames']=self.getImages(data)
@@ -100,11 +107,28 @@ class SameSizeData(Dataset):
 
     def collateRemainders(self, data):
         if len(data['pos'])> self.traj_thresh:
-            data['pos']=np.array(list(combinations(data['pos'],self.traj_thresh)))
-            data['peopleIDs']=np.array(list(combinations(data['peopleIDs'], self.traj_thresh)))
+            # randomly choose self.traj_thresh trajectories from the total in the scene
+            temp=[(i,data['pos'][i]) for i in range(len(data['pos']))]
+            choices=random.sample(temp, k=self.traj_thresh)
+            ids=[data['peopleIDs'][x[0]] for x in choices]
+            distTraj=[data['distTraj'][x[0]] for x in choices]
+            diffs=[data['diffs'][x[0]] for x in choices]
+            spline = [data['spline'][x[0]] for x in choices]
+            pos=[x[1] for x in choices]
+            data['peopleIDs']=np.array(ids)
+            data['pos']=np.array(pos)
+            data['distTraj']=np.array(distTraj)
+            data['diffs']=np.array(diffs)
+            data['spline']=np.array(spline)
+            # data['pos']=np.array(list(combinations(data['pos'],self.traj_thresh)))
+            # data['peopleIDs']=np.array(list(combinations(data['peopleIDs'], self.traj_thresh)))
         elif len(data['pos'])< self.traj_thresh:
             data['pos']=np.array([])
             data['peopleIDs']=np.array([])
+            data['distTraj']=np.array([])
+            data['diffs'] = np.array([])
+            data['spline']=np.array([])
+
         return data
 
     def trimSocialGroups(self, data):
@@ -112,13 +136,49 @@ class SameSizeData(Dataset):
             data['deltas']=np.array([])
             data['groupIDs']=np.array([])
         elif len(data['deltas'])>self.social_thresh:
-            data['deltas'] = np.array(list(combinations(data['deltas'], self.social_thresh)))
-            data['groupIDs'] = np.array(list(combinations(data['groupIDs'], self.social_thresh)))
+            # breakpoint()
+            # randomly choose self.social_thresh groupings from the total in the scene
+            temp = [(i, data['deltas'][i]) for i in range(len(data['deltas']))]
+            choices = random.sample(temp, k=self.social_thresh)
+            ids = [data['groupIDs'][x[0]] for x in choices]
+            pos = [x[1] for x in choices]
+            data['groupIDs'] = np.array(ids)
+            data['deltas'] = np.array(pos)
+            # data['plotPos']=np.array([data['pos'][x-1] for x in ids])
+            # data['deltas'] = np.array(list(combinations(data['deltas'], self.social_thresh)))
+            # data['groupIDs'] = np.array(list(combinations(data['groupIDs'], self.social_thresh)))
+        temp=[]
+        conversion = {}
+        for i, p in enumerate(data['peopleIDs']):
+            conversion[p] = i
+        for id in data['groupIDs']:
+            inds=[conversion[i] for i in id]
+            temp.append(data['pos'][inds])
+        # breakpoint()
+        if len(temp)>0:
+            data['plotPos']=np.stack(temp)
+        else:
+            data['plotPos']=np.array([])
         return data
 
-    def reset(self, data):
+    def reset(self, data, keys=None):
         for k in data.keys():
             data[k]=np.array([])
+
+        if keys is not None:
+            for k in keys:
+                data[k]=[]
+        return data
+
+    def getDistTrajs(self, data):
+        # gets the difference between the starting point and all the other points in the trajectory
+        temp=[]
+        diff=[]
+        for x in data['pos']:
+            temp.append(x-x[0])
+            diff.append(np.diff(x,axis=0))
+        data['distTraj']=np.stack(temp)
+        data['diffs']=np.stack(diff)
         return data
 
     def getImages(self,data):
@@ -134,14 +194,14 @@ class SameSizeData(Dataset):
                 for l in locs:
                     pix_loc = world2image(np.array([l]), self.H)
                     cv2.circle(f, tuple(pix_loc[0]), 5, (255, 255, 255), -1)
-                f=self.transforms(torch.FloatTensor(f))
+                #f=self.transforms(torch.FloatTensor(f))
             else:
                 self.video.set(1, i)  # 1 is for CV_CAP_PROP_POS_FRAMES
                 ret, f = self.video.read()
             frames.append(f)
         return frames
 
-    def getDistances(self, data):
+    def getSocialDistances(self, data):
         ''' So Far, going with avg distance over the trajectory needs to be below a threshold '''
         people = data['peopleIDs']
         conversion={}
@@ -189,7 +249,7 @@ class SameSizeData(Dataset):
 
     def getFrames(self, item, frameNumber):
         #breakpoint()
-        peopleIDs, posDict, frames = [], defaultdict(list), [self.dataset]
+        peopleIDs, posDict, frames = [], defaultdict(list), [self.name]
         for i in range(frameNumber):
             frameID = [self.dataset.data['frame_id'].unique()[item+i]]
             frames.extend(frameID)
@@ -201,6 +261,16 @@ class SameSizeData(Dataset):
 
         dataset={'peopleIDs':peopleIDs, 'pos':posDict, 'frames':frames}
         return dataset
+
+    def parameterize(self, data):
+        temp=[]
+        t=np.array(list(range(self.input_window+self.output_window)))/(self.input_window+self.output_window)
+        A=np.stack([t**2, t, [1]*(self.input_window+self.output_window)]).T
+        for x in data['pos']:
+            q,res, r, s = np.linalg.lstsq(A,x, rcond=None)
+            temp.append(q)
+        data['spline']=np.stack(temp)
+        return data
 
 
 if __name__=='__main__':

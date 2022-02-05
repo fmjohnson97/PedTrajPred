@@ -65,8 +65,8 @@ class OpenTrajData(Dataset):
             #turns the dict into an array if not filter
             #or if filter, it gets rid of people not present in the entire sequence of frames
             data = self.filterAndFlatten(data)
-        if self.image:
-            data['frames']=self.getImages(data)
+        # if self.image:
+        #     data['frames']=self.getImages(data)
         data['index']=[item]
         return data
 
