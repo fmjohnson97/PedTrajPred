@@ -144,3 +144,4 @@ dmypy.json
 /OpenTraj/setup.py
 /disentanglement_pytorch/
 /weights/
+/data/*window.npy
