@@ -12,7 +12,7 @@ from itertools import combinations
 
 class PlainTrajData(Dataset):
     def __init__(self, dataset, mode='by_frame', image=False, input_window=8, output_window=12, group_size=2,
-                 distThresh=0.01, trajThresh=None, socialThresh=None, maxN=None):
+                 distThresh=0.01, trajThresh=None, socialThresh=None, maxN=None, split='train'):
         '''
             dataset: selects which data paths to use from below
             mode: either chooses the trajectories "by_frame" or "by_human"
@@ -35,7 +35,7 @@ class PlainTrajData(Dataset):
                           'datasets/UCY/zara01/annotation.vsp', (17.0080, 16.7517), (-1.3615, -1.1406)],
             'UCY_Zara2': ['datasets/UCY/zara02/H.txt', 'datasets/UCY/zara02/video.avi',
                           'datasets/UCY/zara02/annotation.vsp', (17.0984, 16.9911), (-1.4058, -1.2719)]}
-
+        self.split = split
         self.mode = mode
         self.image = image
         self.transforms = Compose([GaussianBlur(5)])
@@ -72,13 +72,23 @@ class PlainTrajData(Dataset):
             self.trajectory = self.dataset.get_trajectories()
             self.groups = self.trajectory.indices
 
+        if split == 'train':
+            self.offset = 0
+        else:
+            self.offset = int((self.dataset.data['frame_id'].nunique()-self.output_window-self.input_window)*.8)
+
     def __len__(self):
         if self.mode=='by_human':
             return len(self.groups)
         elif self.mode =='by_frame':
-            return self.dataset.data['frame_id'].nunique()-self.output_window-self.input_window
+            if self.split == 'train':
+                return int((self.dataset.data['frame_id'].nunique()-self.output_window-self.input_window)*.8)
+            else:
+                return int((self.dataset.data['frame_id'].nunique()-self.output_window-self.input_window)*.2)
+
 
     def __getitem__(self, item):
+        item += self.offset
         if self.mode == 'by_human':
             data = self.getOneHumanTraj(item)
         elif self.mode=='by_frame':
