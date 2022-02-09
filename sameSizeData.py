@@ -27,14 +27,20 @@ class SameSizeData(Dataset):
         self.root = '/Users/faith_johnson/GitRepos/PedTrajPred/OpenTraj/'
         self.name = dataset
         # H path, Vid Path, load_X arguments
+        # UCY_Zara1 [17.00800773 16.75168712] [-1.36153733 -1.14055993]
+        # ETH_Hotel [4.289431  4.2920379] [-10.253669 -10.005824]
+        # ETH [13.868879 13.868879] [-6.5106892 -6.2595176]
+        # UCY_Zara2 [17.09842293 16.99113599] [-1.40575035 -1.27186937]
         self.paths = {
-            'ETH': ['datasets/ETH/seq_eth/H.txt', 'datasets/ETH/seq_eth/video.avi', '/datasets/ETH/seq_eth/obsmat.txt', (13.8689, 13.8689), (-6.5107, -6.2595)], # (480, 640), (14, 16), (-10,-10),
+            'ETH': ['datasets/ETH/seq_eth/H.txt', 'datasets/ETH/seq_eth/video.avi', '/datasets/ETH/seq_eth/obsmat.txt',
+                    (14, 14), (-7, -7)],  # (480, 640), (13.8689, 13.8689), (-6.5107, -6.2595),
             'ETH_Hotel': ['datasets/ETH/seq_hotel/H.txt', 'datasets/ETH/seq_hotel/video.avi',
-                          '/datasets/ETH/seq_hotel/obsmat.txt', (4.2894, 4.2920), (-10.2537, -10.0058)], #(576, 720), (5, 3), (-6,-9),
+                          '/datasets/ETH/seq_hotel/obsmat.txt', (5, 5), (-11, -11)],
+            # (576, 720), (5, 3), (-6,-9),
             'UCY_Zara1': ['datasets/UCY/zara01/H.txt', 'datasets/UCY/zara01/video.avi',
-                          'datasets/UCY/zara01/annotation.vsp', (17.0080, 16.7517), (-1.3615, -1.1406)],
+                          'datasets/UCY/zara01/annotation.vsp', (18, 17), (-2, -2)],
             'UCY_Zara2': ['datasets/UCY/zara02/H.txt', 'datasets/UCY/zara02/video.avi',
-                          'datasets/UCY/zara02/annotation.vsp', (17.0984, 16.9911), (-1.4058, -1.2719)]}
+                          'datasets/UCY/zara02/annotation.vsp', (18, 17), (-2, -2)]}
 
         self.mode = mode
         self.image = image
