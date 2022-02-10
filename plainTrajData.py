@@ -106,6 +106,8 @@ class PlainTrajData(Dataset):
                 # data = self.getSocialDistances(data)
                 data = self.getDistTrajs(data)
                 # data = self.parameterize(data)
+                # if self.maxN:
+                #     data = self.collateRemainders(data)
                 # if self.social_thresh is not None:
                 #     # trims down # of social groups returned
                 #     data = self.trimSocialGroups(data)
@@ -123,28 +125,28 @@ class PlainTrajData(Dataset):
         return data
 
     def collateRemainders(self, data):
-        if len(data['pos'])> self.traj_thresh:
+        if len(data['pos'])> self.maxN:
             # randomly choose self.traj_thresh trajectories from the total in the scene
             temp=[(i,data['pos'][i]) for i in range(len(data['pos']))]
-            choices=random.sample(temp, k=self.traj_thresh)
+            choices=random.sample(temp, k=self.maxN)
             ids=[data['peopleIDs'][x[0]] for x in choices]
-            distTraj=[data['distTraj'][x[0]] for x in choices]
+            # distTraj=[data['distTraj'][x[0]] for x in choices]
             diffs=[data['diffs'][x[0]] for x in choices]
-            spline = [data['spline'][x[0]] for x in choices]
+            # spline = [data['spline'][x[0]] for x in choices]
             pos=[x[1] for x in choices]
             data['peopleIDs']=np.array(ids)
             data['pos']=np.array(pos)
-            data['distTraj']=np.array(distTraj)
+            # data['distTraj']=np.array(distTraj)
             data['diffs']=np.array(diffs)
-            data['spline']=np.array(spline)
+            # data['spline']=np.array(spline)
             # data['pos']=np.array(list(combinations(data['pos'],self.traj_thresh)))
             # data['peopleIDs']=np.array(list(combinations(data['peopleIDs'], self.traj_thresh)))
-        elif len(data['pos'])< self.traj_thresh:
+        elif len(data['pos'])< self.maxN:
             data['pos']=np.array([])
             data['peopleIDs']=np.array([])
-            data['distTraj']=np.array([])
+            # data['distTraj']=np.array([])
             data['diffs'] = np.array([])
-            data['spline']=np.array([])
+            # data['spline']=np.array([])
 
         return data
 

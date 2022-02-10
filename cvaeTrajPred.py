@@ -20,6 +20,8 @@ from socialHeatmapMultiN import getNewGroups
 import pandas as pd
 from cvaeModels import CVAE_Net
 from tqdm import tqdm
+from matplotlib import pyplot as plt
+import random
 
 # from disentanglement_pytorch.models.cvae import CVAEModel
 # from disentanglement_pytorch.architectures.encoders.linear import ShallowGaussianLinear, DeepGaussianLinear
@@ -40,7 +42,8 @@ def get_args():
     parser.add_argument('--maxN', default=5, type=int)
     parser.add_argument('--epochs', default=20, type=int)
     parser.add_argument('--social_thresh', default=0.2, type=float)  # 0.9 for trajData
-    parser.add_argument('--lr', default=1e-3, type=float)
+    parser.add_argument('--lr', default=1e-4, type=float)
+    parser.add_argument('--train', action='store_true')
 
     args = parser.parse_args()
     return args
@@ -49,12 +52,15 @@ def get_args():
 def makeTSNELabel(prefix):
     global GT_TSNE_VALUES
     global TSNE_N_CUTOFFS
+    global TSNE_BOUNDS
     GT_TSNE_VALUES = pd.DataFrame(columns=['tsne_X','tsne_Y','kmeans'])
     TSNE_N_CUTOFFS = {}
+    TSNE_BOUNDS = {}
     max_label = 0
     for i in range(1,args.maxN+1):
         data = pd.read_csv('data/'+prefix+'_'+str(i)+'thresh_'+str(args.input_window)+'window.csv')
         temp = data.filter(['tsne_X', 'tsne_Y', 'kmeans'])
+        TSNE_BOUNDS[i]=[[temp['tsne_X'].max(),temp['tsne_Y'].max()],[temp['tsne_X'].min(),temp['tsne_Y'].min()]]
         temp['kmeans']=temp['kmeans']+max_label
         GT_TSNE_VALUES = GT_TSNE_VALUES.append(temp)
         max_label = temp['kmeans'].max()+1
@@ -71,8 +77,8 @@ def getTSNELabel(tsne):
 
 def zeroPad(pos, args):
     npad = args.maxN - pos.shape[0]
-    extra = torch.zeros(npad, args.input_window, 2)
-    return torch.cat((pos,extra), dim=-2)
+    extra = torch.zeros(npad, args.input_window+args.output_window, 2)
+    return torch.cat((pos,extra), dim=0)
 
 
 def train(args, net, tsne_nets):
@@ -82,7 +88,7 @@ def train(args, net, tsne_nets):
     for name in ['ETH', 'ETH_Hotel', 'UCY_Zara1', 'UCY_Zara2']:
         dataset = PlainTrajData(name, input_window=args.input_window, output_window=args.output_window, maxN=args.maxN)
         totalData+=len(dataset)
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(opt, args.epochs * totalData, 1e-12)
+    # scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(opt, args.epochs * totalData, 1e-12)
     avg_loss = []
     for e in tqdm(range(args.epochs)):
         ep_loss=[]
@@ -97,25 +103,91 @@ def train(args, net, tsne_nets):
                         with torch.no_grad():
                             tsne_net = tsne_nets[p.shape[-3] - 1]
                             tsne = tsne_net(p[:,:(args.input_window-1),:].flatten().float())
-                            # tsne_label = getTSNELabel(tsne)
+                            # breakpoint()
+                            tsne_label = getTSNELabel(tsne)
+                            try:
+                                bounds = TSNE_BOUNDS[p.shape[-3]]
+                            except:
+                                breakpoint()
+                            tsne = (tsne-np.array(bounds[1]))/(np.array(bounds[0])-np.array(bounds[1]))
                         target = data['pos'][0][np.array(list(groups[i]))]
-                        output, mu, log_sigma, z = net(target[:,:args.input_window,:].reshape(args.input_window, -1, 2).float(), torch.stack([tsne]*p.shape[-3]).float())#torch.tensor(tsne_label))
+                        target = zeroPad(target, args)
+                        # *args.maxN
+                        #
+                        # torch.stack([tsne]* p.shape[-3]).float()
                         # breakpoint()
+                        output, mu, log_sigma, z = net(target[:, :args.input_window, :].reshape(args.input_window, -1, 2).float(),torch.tensor(tsne_label))
                         opt.zero_grad()
                         # reconstruction loss
                         # people are using binary cross entropy here
-                        rc_loss = loss_func(output,target[:,args.input_window:,:].reshape(-1, args.output_window*2).float())
+                        rc_loss = loss_func(output,target[:,:args.input_window,:].reshape(-1, args.input_window*2).float())
                         #kl loss
                         kl_loss = -0.5 * torch.sum(-torch.exp(log_sigma) - mu.pow(2) + 1. + log_sigma) / args.batch_size
                         loss = rc_loss + kl_loss
                         loss.backward()
                         opt.step()
-                        scheduler.step()
+                        # scheduler.step()
                         ep_loss.append(loss.item())
 
         print('Epoch',e,': Loss =',np.mean(ep_loss))
         avg_loss.append(np.mean(ep_loss))
-        torch.save(net.state_dict(), 'cvaeTraj.pt')
+        torch.save(net.state_dict(), 'cvaeTraj_input.pt')
+
+    return net
+
+def test(args, net, tsne_nets):
+    loss_func = torch.nn.BCELoss()  #torch.nn.MSELoss() #torch.nn.L1Loss() #
+    net.eval()
+    predictions=[]
+    inputs=[]
+    for name in ['ETH', 'ETH_Hotel', 'UCY_Zara1', 'UCY_Zara2']:
+        dataset = PlainTrajData(name, input_window=args.input_window, output_window=args.output_window, maxN=args.maxN, split='test')
+        loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False)
+        test_loss = []
+        for data in tqdm(loader):
+            if data['pos'].nelement() > 0:
+                pos, groups = getNewGroups(data['diffs'][0], args)
+                # breakpoint()
+                for i, p in enumerate(pos):
+                    with torch.no_grad():
+                        tsne_net = tsne_nets[p.shape[-3] - 1]
+                        tsne = tsne_net(p[:, :(args.input_window - 1), :].flatten().float())
+                        tsne_label = getTSNELabel(tsne)
+                        target = data['pos'][0][np.array(list(groups[i]))]
+                        target = zeroPad(target, args)
+                        #*args.maxN
+                        #
+                        #torch.stack([tsne]* p.shape[-3]).float()
+                        output, mu, log_sigma, z = net(target[:, :args.input_window, :].reshape(args.input_window, -1, 2).float(), torch.tensor(tsne_label))
+                        predictions.append(output.detach())
+                        inputs.append(target)
+                        # breakpoint()
+                        # reconstruction loss
+                        # people are using binary cross entropy here
+                        rc_loss = loss_func(output,target[:, :args.input_window, :].reshape(-1, args.input_window * 2).float())
+                        # kl loss
+                        kl_loss = -0.5 * torch.sum(-torch.exp(log_sigma) - mu.pow(2) + 1. + log_sigma) / args.batch_size
+                        loss = rc_loss + kl_loss
+                        test_loss.append(loss.item())
+
+    return test_loss, inputs, predictions
+
+def graph(args, inputs, predictions=None, name=None):
+    plt.figure()
+    if predictions is None:
+        plt.hist(inputs)
+        plt.title(name)
+    else:
+        # breakpoint()
+        ind = random.choice(list(range(len(inputs))))
+        for pos in inputs[ind]:
+            plt.scatter(pos[:args.input_window,0], pos[:args.input_window,1], c='b')
+            plt.scatter(pos[args.input_window:,0], pos[args.input_window:,1], c='g')
+        for pos in predictions[ind].reshape(-1, args.input_window, 2):
+            plt.plot(pos[:,0], pos[:,1], c='tab:orange')
+            plt.scatter(pos[0][0], pos[0][1], c='tab:orange')
+        plt.title(name)
+
 
 if __name__ == '__main__':
     args = get_args()
@@ -134,5 +206,16 @@ if __name__ == '__main__':
 
     makeTSNELabel('diffsData')
 
-    train(args, net, tsne_nets)
+    if args.train:
+        net = train(args, net, tsne_nets)
+    else:
+        net.load_state_dict(torch.load('cvaeTraj_input.pt', map_location=torch.device('cpu')))
+
+    test_loss, inputs, predictions = test(args, net, tsne_nets)
+    print("Avg Test Loss:",np.mean(test_loss))
+    graph(args, test_loss, name='Test Loss')
+    for i in range(10):
+        graph(args, inputs, predictions, name='Predictions')
+
+    plt.show()
 
