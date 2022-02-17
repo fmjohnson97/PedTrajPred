@@ -145,3 +145,11 @@ dmypy.json
 /disentanglement_pytorch/
 /weights/
 /data/*window.npy
+/social_cnn_pytorch/
+/TrajNet/Python-RVO2-master
+/TrajNet/socialforce-main
+/TrajNet/trajnetplusplusdata
+/TrajNet/trajnetplusplusbaselines
+/TrajNet/trajnetplusplusdataset
+/TrajNet/trajnetplusplustools
+/*.pt
