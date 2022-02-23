@@ -113,7 +113,7 @@ if __name__ == '__main__':
     nets=[]
     N=np.array(range(1,args.maxN+1))
     for i in N:
-        net = SimpleRegNetwork(i * 15 * 2).eval()
+        net = SimpleRegNetwork(i * (args.input_window-1) * 2).eval()
         net.load_state_dict(torch.load('/Users/faith_johnson/GitRepos/PedTrajPred/weights/simpleRegNet_diffsData_'+str(i)+'people_'+str(args.input_window)+'window.pt'))
         nets.append(net)
 
@@ -179,8 +179,10 @@ if __name__ == '__main__':
         grids_plotY = np.linspace(min_plot_coord[1], max_plot_coord[1], args.ygrid_num)
         # grids_tsneX = np.linspace(min_tsne[0], max_tsne[0], args.num_grids)
         # grids_tsneY = np.linspace(min_tsne[1], max_tsne[1], args.num_grids)
+        print('Computing grids')
         colors=makeColorGrid(np.array(min_tsne), np.array(max_tsne), args)
 
+        print('plotting legend')
         # plot color legend
         fig1 = plt.figure()
         fig1.suptitle('Legend for Graph Colors')
@@ -191,12 +193,12 @@ if __name__ == '__main__':
             ax.set_xticks([])
             ax.set_yticks([])
 
-
+        print('plotting heatmap')
         fig2 = plt.figure()
         ax1 = fig2.add_subplot(111)
         fig3 = plt.figure()
         ax2 = fig3.add_subplot(111)
-        # ax.axis([min_plot_coord[0], max_plot_coord[0], min_plot_coord[1], max_plot_coord[1]])
+        # ax2.axis([0, 1, 0, 1])#min_plot_coord[0], max_plot_coord[0], min_plot_coord[1], max_plot_coord[1]])
         for i, tpred in tqdm(enumerate(tsne_preds)):
             vals=[]
             ax2.clear()
@@ -210,11 +212,12 @@ if __name__ == '__main__':
                 vals.append(getGridFill(pos.reshape(n,args.input_window,2), grids_plotX, grids_plotY, color, args))
                 # breakpoint()
                 ax2.set_title(name + ' pedestrian social patterns')
+                ax2.axis([0, 1, 0, 1])
                 for p in pos.reshape(n,args.input_window,2):
                     # ax2.plot(p, c=[color/255]*p.shape[0])
                     ax2.scatter(p[1:,0],p[1:,1], c=[color/255])
                     ax2.scatter(p[0, 0], p[0, 1], c=[color / 255], marker='x')
-
+                # plt.pause(0.15)
             if len(tpred)>1:
                 # breakpoint()
                 vals=np.sum(vals, axis=0)
@@ -223,7 +226,7 @@ if __name__ == '__main__':
             ax1.clear()
             ax1.set_title(name + ' pedestrian social patterns')
             ax1.imshow(vals.astype(np.uint8), interpolation='nearest')
-            plt.pause(0.5)
+            plt.pause(0.3)
 
 
 

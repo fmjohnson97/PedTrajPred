@@ -9,6 +9,8 @@ from OpenTraj.utils import world2image
 import torch
 import random
 from itertools import combinations
+from TrajNet.trajnetplusplusbaselines.trajnetbaselines.lstm.utils import center_scene
+
 
 class PlainTrajData(Dataset):
     def __init__(self, dataset, mode='by_frame', image=False, input_window=8, output_window=12, group_size=2,
@@ -252,8 +254,15 @@ class PlainTrajData(Dataset):
                 positions.append(posDict[k])
                 people.append(k)
         if len(positions)>0:
+            # breakpoint()
             data['pos']=(np.array(positions)-self.min)/(self.max-self.min)
+            # positions=np.stack(positions)
+            # positions = (np.array(positions)-self.min)/(self.max-self.min)
+            # pos, rot, center = center_scene(np.transpose(positions, (1,0,2)), positions.shape[1])
+            # data['pos']=np.transpose(pos, (1,0,2))
             data['peopleIDs']=np.array(people)
+            # data['rot']=rot
+            # data['center']=center
         else:
             data=self.reset(data)
         return data

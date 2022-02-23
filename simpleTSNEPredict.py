@@ -69,7 +69,7 @@ def train(net, loader, args):
             scheduler.step()
             total_loss.append(loss.item())
 
-        torch.save(net.state_dict(), 'simpleRegNet_trajData_' + str(args.num_people) + 'people_' + str(args.window)+'window.pt')
+        torch.save(net.state_dict(), 'simpleRegNet_noNorm_diffsData_' + str(args.num_people) + 'people_' + str(args.window)+'window.pt')
         print('Epoch', e, ': Loss =', np.mean(total_loss))
         overall_loss.append(np.mean(total_loss))
     plt.figure()
@@ -163,21 +163,21 @@ def graphPreds(net, loader, args):
 
 if __name__ == '__main__':
     args=get_args()
-    dataset = TSNEGT(args.path + 'trajData_' + str(args.num_people) + 'thresh_'+str(args.window)+'window.csv', args.num_clusters)
+    dataset = TSNEGT(args.path + 'noNorm_diffsData_' + str(args.num_people) + 'thresh_'+str(args.window)+'window.csv', args.num_clusters)
     # dataset = TSNEGT(args.path + 'socData_' + str(args.num_people) + 'thresh_'+ str(args.num_people) +'group_8window.csv', args.num_clusters)
     loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True)
-    net = SimpleRegNetwork(args.num_people * (args.window) * 2)  # SimpleCatNetwork(32, args.num_clusters) #
+    net = SimpleRegNetwork(args.num_people * (args.window-1) * 2)  # SimpleCatNetwork(32, args.num_clusters) #
     if args.train:
         print('training loop')
         # net.load_state_dict(torch.load('simpleRegNet_diffsData_' + str(args.num_people) + 'people_' + str(args.window)+'window.pt'))
         net = train(net, loader, args)
     else:
-        net.load_state_dict(torch.load('weights/simpleRegNet_trajData_' + str(args.num_people) + 'people_' + str(args.window)+'window.pt'))
+        net.load_state_dict(torch.load('weights/simpleRegNet_noNorm_diffsData_' + str(args.num_people) + 'people_' + str(args.window)+'window.pt'))
 
     net.eval()
     graphPreds(net, loader, args)
 
-    dataset = TSNEGT(args.path + 'trajData_' + str(args.num_people) + 'thresh_'+str(args.window)+'window.csv', args.num_clusters, split='test')
+    dataset = TSNEGT(args.path + 'noNorm_diffsData_' + str(args.num_people) + 'thresh_'+str(args.window)+'window.csv', args.num_clusters, split='test')
     # dataset = TSNEGT(args.path + 'socData_' + str(args.num_people) + 'thresh_'+ str(args.num_people) +'group_8window.csv', args.num_clusters, split='test')
     loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True)
     graphPreds()

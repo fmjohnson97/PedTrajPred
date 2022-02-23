@@ -52,6 +52,7 @@ def get_latents(args, model, train_scenes):
         #    Absolute positions of all pedestrians
         # Rel_outputs: Tensor [seq_length, num_tracks, 5]
         #    Velocities of all pedestrians
+        breakpoint()
         with torch.no_grad():
             if args.type == 'vae':
                 rel_outputs, _, z_distr_xy, z_distr_x = model(input_scene[:args.obs_length], input_goal, input_split,
@@ -64,13 +65,13 @@ def get_latents(args, model, train_scenes):
         MASTER_LATENT_LIST.append(CLUSTER_LATENT)
         MASTER_PREDICTIONS.append(outputs)
 
-        # if scene_i == 0:
-        #     input_scene = input_scene.reshape(-1, args.obs_length + args.pred_length, 2)
-        #     outputs = outputs.reshape(-1, args.obs_length + args.pred_length - 1, 2).detach()
-        #     for i, pos in enumerate(input_scene):
-        #         plt.scatter(pos[:, 0], pos[:, 1], c='b')
-        #         plt.scatter(outputs[i, :, 0], outputs[i, :, 1], c='r')
-        #         plt.show()
+        if scene_i == 0:
+            input_scene = input_scene.reshape(-1, args.obs_length + args.pred_length, 2)
+            outputs = outputs.reshape(-1, args.obs_length + args.pred_length - 1, 2).detach()
+            for i, pos in enumerate(input_scene):
+                plt.scatter(pos[:, 0], pos[:, 1], c='b')
+                plt.scatter(outputs[i, :, 0], outputs[i, :, 1], c='r')
+                plt.show()
 
     return MASTER_LATENT_LIST, MASTER_PREDICTIONS
 

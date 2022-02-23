@@ -133,15 +133,15 @@ def createManifold(args):
     # breakpoint()
     tsne = TSNE()
     if args.traj_thresh is not None:
-        print(len(data['pos']))
-        trajData = tsne.fit_transform(data['pos'])
-        np.savetxt('trajData_' + str(args.traj_thresh) + 'thresh_' + str(args.input_window + args.output_window) + 'window.npy', trajData)
+        # print(len(data['pos']))
+        # trajData = tsne.fit_transform(data['pos'])
+        # np.savetxt('trajData_' + str(args.traj_thresh) + 'thresh_' + str(args.input_window + args.output_window) + 'window.npy', trajData)
         # print(len(data['distTraj']))
         # distTrajData = tsne.fit_transform(data['distTraj'])
         # np.savetxt('distTrajData_' + str(args.traj_thresh) + 'thresh_' + str(args.input_window + args.output_window) + 'window.npy', distTrajData)
-        # print(len(data['diffs']))
-        # diffsData = tsne.fit_transform(data['diffs'])
-        # np.savetxt('diffsData_' + str(args.traj_thresh) + 'thresh_' + str(args.input_window + args.output_window) + 'window.npy', diffsData)
+        print(len(data['diffs']))
+        diffsData = tsne.fit_transform(data['diffs'])
+        np.savetxt('diffsData_' + str(args.traj_thresh) + 'thresh_' + str(args.input_window + args.output_window) + 'window.npy', diffsData)
         # print(len(data['spline']))
         # splineData = tsne.fit_transform(data['spline'])
         # np.savetxt('splineData_' + str(args.traj_thresh) + 'thresh_' + str(
@@ -153,7 +153,7 @@ def createManifold(args):
         # np.savetxt('socData_' + str(args.social_thresh) + 'thresh_' + str(args.group_size) + 'group_' + str(
         #     args.input_window + args.output_window) + 'window.npy', socData)
 
-    return trajData, socData, data
+    return diffsData, socData, data
 
 
 def loadData(args):
@@ -208,11 +208,11 @@ if __name__=='__main__':
     temp=pd.DataFrame()
     temp['tsne_X']=diffsData[:,0]
     temp['tsne_Y'] = diffsData[:, 1]
-    temp['pos'] = data['pos']
+    temp['pos'] = data['diffs']
     temp['kmeans'] = kmeans.labels_
     temp['frames'] = data['posFrames']
     temp['plotPos']=data['pos']
-    temp.to_csv('trajData_' + str(args.traj_thresh) + 'thresh_'+ str(args.input_window + args.output_window) + 'window.csv') #+ str(args.group_size) + 'group_'
+    temp.to_csv('diffsData_' + str(args.traj_thresh) + 'thresh_'+ str(args.input_window + args.output_window) + 'window.csv') #+ str(args.group_size) + 'group_'
 
     breakpoint()
     print('Plotting traj data')

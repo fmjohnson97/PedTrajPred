@@ -6,9 +6,8 @@ from scipy.interpolate import interp1d
 
 class TrajAugs():
     def __init__(self, num_augs=1, mask_percent=0.25, args=None, include_aug=False):
-        self.augs=[self.resample_up, self.resample_down, self.translate,
-                   self.rotate,  self.flip_horiz, self.flip_vert]
-        #self.noise, self.translate,
+        self.augs=[self.flip_horiz, self.flip_vert, self.rotate]#,
+        #self.noise, self.resample_up, self.resample_down, self.translate,
         if args:
             self.include_aug = args.include_aug
             self.num_augs = args.num_augs
@@ -22,6 +21,7 @@ class TrajAugs():
         augs=self.pick_aug()
         for a in augs:
             traj=a(traj)
+
         if self.include_aug:
             return traj, augs
         else:
@@ -66,11 +66,22 @@ class TrajAugs():
         self.rotDegree=random.randint(0,360)#choice([90, 180, 270])
         theta=np.deg2rad(self.rotDegree)
         rot=np.array([[np.cos(theta), -np.sin(theta)],[np.sin(theta), np.cos(theta)]])
-        traj=np.dot(rot,traj.T)
-        return traj.T
+        # from matplotlib import pyplot as plt
+        # for t in traj:
+        #     plt.plot(t[:,0],t[:,1],c='b')
+        temp = []
+        for t in traj:
+            temp.append(np.dot(rot,t.T))
+        traj=np.stack([t.T for t in temp])
+        # for t in traj:
+        #     plt.plot(t[:,0],t[:,1],c='tab:orange')
+        # plt.show()
+        # breakpoint()
+        return traj
 
     def translate(self, traj):
-        self.trans_increment = [random.uniform(-1, 1),random.uniform(-1, 1)]
+        inc = random.uniform(-0.05, 0.05)
+        self.trans_increment = [inc,inc]
         return traj+self.trans_increment
 
     def flip_horiz(self, traj):
