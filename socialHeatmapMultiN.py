@@ -78,8 +78,6 @@ def getNewGroups(pos, args):
     groupDict=defaultdict(int)
     for i,p in enumerate(pos): # blue, orange, green, red, purple, brown
         dists = torch.sum(torch.sum((pos-p)**2,axis=-1)**.5, axis=-1)
-        # print(dists)
-        # breakpoint()
         inds=np.where(dists<args.social_thresh)
         for ind in inds:
             if len(ind)<=args.maxN:

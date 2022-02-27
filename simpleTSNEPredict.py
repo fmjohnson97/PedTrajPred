@@ -29,6 +29,15 @@ class SimpleRegNetwork(nn.Module):
         self.projection_head = nn.Sequential(nn.Linear(in_channels, 64),nn.LeakyReLU(),nn.Linear(64,128))
         self.relu = nn.LeakyReLU()
         self.output_layer = nn.Sequential(nn.Linear(128,64), nn.LeakyReLU(), nn.Linear(64, 16), nn.LeakyReLU(),nn.Linear(16, 2))
+        # self.projection_head = nn.Sequential(nn.Linear(in_channels, 64),
+        #                                      nn.LeakyReLU(),
+        #                                      nn.Linear(64, 64))
+        # self.relu = nn.LeakyReLU()
+        # self.output_layer = nn.Sequential(nn.Linear(64, 32),
+        #                                   nn.LeakyReLU(),
+        #                                   nn.Linear(32, 16),
+        #                                   nn.LeakyReLU(),
+        #                                   nn.Linear(16, 2))
 
     def forward(self, x):
         x = self.relu(self.projection_head(x))
@@ -163,13 +172,13 @@ def graphPreds(net, loader, args):
 
 if __name__ == '__main__':
     args=get_args()
-    dataset = TSNEGT(args.path + 'noNorm_diffsData_' + str(args.num_people) + 'thresh_'+str(args.window)+'window.csv', args.num_clusters)
+    dataset = TSNEGT(args.path + 'diffsData_' + str(args.num_people) + 'thresh_'+str(args.window)+'window.csv', args.num_clusters)
     # dataset = TSNEGT(args.path + 'socData_' + str(args.num_people) + 'thresh_'+ str(args.num_people) +'group_8window.csv', args.num_clusters)
     loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True)
     net = SimpleRegNetwork(args.num_people * (args.window-1) * 2)  # SimpleCatNetwork(32, args.num_clusters) #
     if args.train:
         print('training loop')
-        # net.load_state_dict(torch.load('simpleRegNet_diffsData_' + str(args.num_people) + 'people_' + str(args.window)+'window.pt'))
+        # net.load_state_dict(torch.load('simpleRegNet_noNorm_diffsData_' + str(args.num_people) + 'people_' + str(args.window)+'window.pt'))
         net = train(net, loader, args)
     else:
         net.load_state_dict(torch.load('weights/simpleRegNet_noNorm_diffsData_' + str(args.num_people) + 'people_' + str(args.window)+'window.pt'))

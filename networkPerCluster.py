@@ -8,23 +8,24 @@ import numpy as np
 from matplotlib import pyplot as plt
 import random
 from sklearn.manifold import TSNE
-from social_cnn_pytorch.main_scripts.train import CNNTrajNet
 from trajAugmentations import TrajAugs
 from simpleTSNEPredict import SimpleRegNetwork
+from tsneGTdataset import TSNEGT
+import pandas as pd
 
-CLUSTERS_PER_N = {1:10, 2:20, 3:35, 4:40, 5:40}
+CLUSTERS_PER_N = {1:5, 2:5, 3:5, 4:5}
 
 class SimplestNet(nn.Module):
     def __init__(self, args):
         super(SimplestNet, self).__init__()
-        # self.fc1=nn.Linear((args.input_window+1)*2,32)
-        # self.fc2 = nn.Linear(32, 64)
-        # self.fc3 = nn.Linear(64+32, 32)
-        # self.outfc=nn.Linear(32+32+64, args.output_window*2)
-        self.fc1 = nn.Linear((args.input_window) * 4, 64)
-        self.fc2 = nn.Linear(64, 64)
-        self.fc3 = nn.Linear(64+64, 32)
-        self.outfc=nn.Linear(32+2*64, args.output_window*2)
+        self.fc1=nn.Linear((args.input_window+1)*2,32)
+        self.fc2 = nn.Linear(32, 64)
+        self.fc3 = nn.Linear(64+32, 32)
+        self.outfc=nn.Linear(32+32+64, args.output_window*2)
+        # self.fc1 = nn.Linear((args.input_window) * 4, 64)
+        # self.fc2 = nn.Linear(64, 64)
+        # self.fc3 = nn.Linear(64+64, 32)
+        # self.outfc=nn.Linear(32+2*64, args.output_window*2)
         self.relu = nn.LeakyReLU()
 
     def forward(self, x):
@@ -161,24 +162,21 @@ def get_args():
     parser.add_argument('--output_window', default=12, type=int, help='number of frames for the output data')
     parser.add_argument('--batch_size', default=1, type=int)
     parser.add_argument('--epochs', default=20, type=int)
-    parser.add_argument('--maxN', default=5, type=int)
+    parser.add_argument('--maxN', default=3, type=int)
     parser.add_argument('--lr', default=1e-2, type=float)
     parser.add_argument('--train', action='store_true')
-
-    # CNNTraj parameters
-    parser.add_argument('--input_size', default=8, type=int, help='number of frames for the input data')
-    parser.add_argument('--output_size', default=12, type=int, help='number of frames for the output data')
-    parser.add_argument('--embedding_size', default=32, type=int, help='size of the embedding')
-    parser.add_argument('--dropout_rate', default=0.06, type=float)
 
     args = parser.parse_args()
     return args
 
-def train(args, net, device, tsne_nets):
-    min_loss = np.inf
+def train(args, nets, device, tsne_nets):
+    min_loss = [np.inf]*len(nets)
     trajAugs = TrajAugs()
-    opt = torch.optim.Adam(net.parameters(), lr=args.lr)
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(opt, args.epochs * 10000, 1e-12)
+    opts=[]
+    schedulers = []
+    for i in range(len(nets)):
+        opts.append(torch.optim.Adam(nets[i].parameters(), lr=args.lr))
+        schedulers.append(torch.optim.lr_scheduler.CosineAnnealingLR(opts[-1], args.epochs * 1000, 1e-12))
     loss_func = nn.MSELoss() #nn.BCELoss() #
     for e in tqdm(range(args.epochs)):
         avgLoss=[]
@@ -187,17 +185,14 @@ def train(args, net, device, tsne_nets):
             loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False)
             for data in loader:
                 if data['pos'].nelement()>0:
-                    # breakpoint()
+                    breakpoint()
                     scene = torch.tensor(trajAugs.augment(data['pos'][0].numpy()))
-                    # diffs = torch.tensor(np.diff(scene, axis=1))
+                    diffs = torch.tensor(np.diff(scene, axis=1))
                     # vels = torch.cat((torch.zeros(scene.shape[0],1,2),diffs[:,:args.input_window-1,:]),axis=1)
                     # input_scene = torch.cat((scene[:,:args.input_window,:],vels),axis=-1)
                     with torch.no_grad():
-                        try:
-                            tsne_net = tsne_nets[scene.shape[0] - 1]
-                        except:
-                            continue
-                        tsne = tsne_net(data['diffs'][0][:, :(args.input_window - 1), :].flatten().float())
+                        tsne_net = tsne_nets[scene.shape[0] - 1]
+                        tsne = tsne_net(diffs[:, :(args.input_window - 1), :].flatten().float())
                     input_scene = torch.cat((scene[:, :args.input_window, :], torch.ones(scene.shape[0],args.input_window,2)*nn.functional.normalize(tsne.unsqueeze(0))), axis = -1)
                     output, latent = net(input_scene.reshape(-1, (args.input_window) * 4).float().to(device))
                     opt.zero_grad()
@@ -214,7 +209,7 @@ def train(args, net, device, tsne_nets):
             min_loss=np.mean(avgLoss)
     return net
 
-def test(args, net, device, tsne_nets):
+def test(args, nets, device, tsne_nets):
     net.eval()
     loss_func = nn.MSELoss() #nn.BCELoss() #
     avgLoss=[]
@@ -266,40 +261,66 @@ def graph(args, inputs, predictions=None, name=None):
             plt.scatter(pos[0], pos[1], c='tab:orange')
     plt.title(name)
 
+def makeTSNELabel():
+    global GT_TSNE_VALUES
+    global TSNE_N_CUTOFFS
+    global TSNE_BOUNDS
+    GT_TSNE_VALUES = pd.DataFrame(columns=['tsne_X','tsne_Y','kmeans'])
+    TSNE_N_CUTOFFS = {}
+    TSNE_BOUNDS = {}
+    max_label = 0
+    for i in range(1,args.maxN+1):
+        data = pd.read_csv('diffsData_'+str(i)+'thresh_'+str(args.input_window)+'window.csv')
+        temp = data.filter(['tsne_X', 'tsne_Y', 'newClusters'])
+        TSNE_BOUNDS[i]=[[temp['tsne_X'].max(),temp['tsne_Y'].max()],[temp['tsne_X'].min(),temp['tsne_Y'].min()]]
+        temp['newClusters']=temp['newClusters']+max_label
+        GT_TSNE_VALUES = GT_TSNE_VALUES.append(temp)
+        max_label = temp['newClusters'].max()+1
+        temp = temp['newClusters'].unique()
+        temp.sort()
+        TSNE_N_CUTOFFS[i] = temp
+
 if __name__=='__main__':
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     args = get_args()
-    # net = SimplestAutoEncoder(args).to(device)
-    # net = SimplestUNet(args)
-    net = SimplestNet(args).to(device)
-    # net = SimplestConvNet(args)
-    # net = SimplestVAE(args)
-    # net = CNNTrajNet(args)
 
     tsne_nets = []
     N = np.array(range(1, args.maxN + 1))
+    for i in N:
+        temp = SimpleRegNetwork(i * (args.input_window - 1) * 2)  # .eval()
+        temp.load_state_dict(torch.load(
+            '/Users/faith_johnson/GitRepos/PedTrajPred/simpleRegNet_diffsData_' +
+            str(i) + 'people_' + str(args.input_window) + 'window.pt'))
+        temp.eval()
+        tsne_nets.append(temp.to(device))
 
     if args.train:
-        for i in N:
-            temp = SimpleRegNetwork(i * (args.input_window - 1) * 2)  # .eval()
-            temp.load_state_dict(torch.load(
-                '/Users/faith_johnson/GitRepos/PedTrajPred/weights/simpleRegNet_noNorm_diffsData_' + str(
-                    i) + 'people_' + str(
-                    args.input_window) + 'window.pt'))
-            tsne_nets.append(temp.to(device))  # .eval()
-
+        nets = []
+        for i in range(5 * args.maxN):
+            # net = SimplestAutoEncoder(args).to(device)
+            # net = SimplestUNet(args)
+            temp = SimplestNet(args).to(device)
+            # net = SimplestConvNet(args)
+            # net = SimplestVAE(args)
+            # net = CNNTrajNet(args)
+            nets.append(temp)
         # net.load_state_dict(torch.load('simpleAutoEnc_output.pt'))
-        net = train(args, net.to(device), device, tsne_nets)
+        nets = train(args, nets, device, tsne_nets)
 
-    net.load_state_dict(torch.load('simpleNetTSNE.pt'))
-    net.eval()
-    net = net.to(device)
-    for i in N:
-        temp = SimpleRegNetwork(i * (args.input_window - 1) * 2).eval()
-        temp.load_state_dict(torch.load('/Users/faith_johnson/GitRepos/PedTrajPred/weights/simpleRegNet_noNorm_diffsData_' + str(i) + 'people_' + str(args.input_window) + 'window.pt'))
-        tsne_nets.append(temp.eval())
+    nets = []
+    for i in range(5 * args.maxN):
+        # net = SimplestAutoEncoder(args).to(device)
+        # net = SimplestUNet(args)
+        temp = SimplestNet(args).to(device)
+        # net = SimplestConvNet(args)
+        # net = SimplestVAE(args)
+        # net = CNNTrajNet(args)
+        temp.load_state_dict(torch.load())
+        temp.eval()
+        nets.append(temp)
 
-    preds, inputs, latents = test(args, net, device, tsne_nets)
+
+    preds, inputs, latents = test(args, nets, device, tsne_nets)
     # breakpoint()
     if len(latents)>0:
         tsne=TSNE()

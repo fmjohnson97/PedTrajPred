@@ -19,21 +19,29 @@ class TSNEGT(Dataset):
     def __getitem__(self, item):
         # breakpoint()
         try:
-            _, tsneX, tsneY, pos, kmeans, frames, originalPos = self.data.iloc[item].tolist()
-            # breakpoint()
-            originalPos = originalPos[1:-1].strip().split('\n')
+            _, tsneX, tsneY, pos, kmeans, frames, plotPos, newClusters= self.data.iloc[item].tolist()
+            originalPos = plotPos[1:-1].strip().split('\n')
             originalPos = [x.strip().split(' ') for x in originalPos]
             originalPos = np.hstack(originalPos)
             originalPos = [float(x.strip()) for x in originalPos if len(x.strip()) > 0]
         except:
-            _, tsneX, tsneY, pos, kmeans, frames = self.data.iloc[item].tolist()
-            originalPos = []
+            try:
+                _, tsneX, tsneY, pos, kmeans, frames, originalPos = self.data.iloc[item].tolist()
+                # breakpoint()
+                originalPos = originalPos[1:-1].strip().split('\n')
+                originalPos = [x.strip().split(' ') for x in originalPos]
+                originalPos = np.hstack(originalPos)
+                originalPos = [float(x.strip()) for x in originalPos if len(x.strip()) > 0]
+            except:
+                _, tsneX, tsneY, pos, kmeans, frames = self.data.iloc[item].tolist()
+                originalPos = []
         pos=pos[1:-1].strip().split('\n')
         pos=[x.strip().split(' ') for x in pos]
         pos=np.hstack(pos)
         pos=[float(x.strip()) for x in pos if len(x.strip())>0]
-        target=torch.zeros(self.num_clusters)#, dtype=torch.long)
-        target[kmeans-1]=kmeans
+        # target=torch.zeros(self.num_clusters)#, dtype=torch.long)
+        # target[kmeans-1]=kmeans
+        target = newClusters
         return torch.tensor(pos).float(), torch.tensor([tsneX, tsneY]).float(), target, torch.tensor(originalPos)
 
 if __name__ == '__main__':
