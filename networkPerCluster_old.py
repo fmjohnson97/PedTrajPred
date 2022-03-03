@@ -1,3 +1,5 @@
+import sys
+sys.path.append('../')
 import torch
 from plainTrajData import PlainTrajData
 import torch.nn as nn
@@ -14,9 +16,7 @@ from tsneGTdataset import TSNEGT
 import pandas as pd
 from collections import defaultdict
 
-
-CLUSTERS_PER_N = {1:5, 2:13, 3:24}
-CLUSTER_NUM=[0,5,13,24]
+CLUSTERS_PER_N = {1:5, 2:5, 3:5, 4:5}
 
 class SimplestNet(nn.Module):
     def __init__(self, args):
@@ -174,7 +174,7 @@ def get_args():
     return args
 
 def train(args, nets, device, tsne_nets):
-    min_loss = [[np.inf],[np.inf],[np.inf],[np.inf],[np.inf],[np.inf],[np.inf],[np.inf],[np.inf],[np.inf],[np.inf],[np.inf],[np.inf],[np.inf],[np.inf],[np.inf],[np.inf],[np.inf],[np.inf],[np.inf],[np.inf],[np.inf],[np.inf]]
+    min_loss = [[np.inf],[np.inf],[np.inf],[np.inf],[np.inf],[np.inf],[np.inf],[np.inf],[np.inf],[np.inf],[np.inf],[np.inf],[np.inf],[np.inf],[np.inf]]
     trajAugs = TrajAugs()
     opts=[]
     schedulers = []
@@ -184,13 +184,13 @@ def train(args, nets, device, tsne_nets):
         schedulers.append(torch.optim.lr_scheduler.CosineAnnealingLR(opts[-1], args.epochs * 1000, 1e-12))
     loss_func = nn.MSELoss() #nn.BCELoss() #
     for e in tqdm(range(args.epochs)):
-        avgLoss=[[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[]]
+        avgLoss=[[],[],[],[],[],[],[],[],[],[],[],[],[],[],[]]
         for name in ['ETH', 'ETH_Hotel', 'UCY_Zara1', 'UCY_Zara2']:
             dataset = PlainTrajData(name, input_window=args.input_window, output_window=args.output_window, maxN=args.maxN)
             loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False)
             for data in loader:
                 if data['pos'].nelement()>0:
-                    scene = torch.tensor(trajAugs.augment(data['pos'][0].numpy())) #data['pos'][0] #
+                    scene = data['pos'][0] # torch.tensor(trajAugs.augment(data['pos'][0].numpy()))
                     if scene.shape[0]>args.maxN:
                         scene, groups = getNewGroups(scene, args)
                         # breakpoint()
@@ -203,9 +203,9 @@ def train(args, nets, device, tsne_nets):
                         with torch.no_grad():
                             #TSNE_N_CUTOFFS, TSNE_BOUNDS[class](max,min)
                             tsne_net = tsne_nets[s.shape[0] - 1]
-                            tsne = tsne_net(diffs[:, :(args.input_window - 1), :].flatten().float())
+                            tsne = tsne_net(diffs[:, :(args.input_window - 1), :].flatten().float().to(device))
                             bound_coords = np.array(TSNE_BOUNDS[s.shape[0]])
-                            tsne_class = np.argmin(np.sum((tsne.numpy()-bound_coords)**2,axis=-1))+sum(CLUSTER_NUM[:s.shape[0]])
+                            tsne_class = np.argmin(np.sum((tsne.cpu().numpy()-bound_coords)**2,axis=-1))+5*(s.shape[0]-1)
                             # print(tsne_class)
                             if tsne_class in stop_training:
                                 continue
@@ -216,7 +216,7 @@ def train(args, nets, device, tsne_nets):
                         loss.backward()
                         opts[tsne_class].step()
                         schedulers[tsne_class].step()
-        print("Epoch",e,': Loss =',np.mean([np.mean(a) for a in avgLoss if a!=[]]))
+        print("Epoch",e,': Loss =',np.mean([np.mean(a) for a in avgLoss]))
         for i, avg in enumerate(avgLoss):
             if np.mean(avg)<min_loss[i]:
                 # for i in range(1, args.maxN + 1):
@@ -230,7 +230,7 @@ def train(args, nets, device, tsne_nets):
 
 def test(args, nets, device, tsne_nets):
     loss_func = nn.MSELoss() #nn.BCELoss() #
-    avgLoss=[[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[]]
+    avgLoss=[[],[],[],[],[],[],[],[],[],[],[],[],[],[],[]]
     preds = []
     inputs = []
     latents = []
@@ -252,10 +252,10 @@ def test(args, nets, device, tsne_nets):
                     with torch.no_grad():
                         # TSNE_N_CUTOFFS, TSNE_BOUNDS[class](max,min)
                         tsne_net = tsne_nets[s.shape[0] - 1]
-                        tsne = tsne_net(diffs[:, :(args.input_window - 1), :].flatten().float())
+                        tsne = tsne_net(diffs[:, :(args.input_window - 1), :].flatten().float().to(device))
                         bound_coords = np.array(TSNE_BOUNDS[s.shape[0]])
-                        tsne_class = np.argmin(np.sum((tsne.numpy() - bound_coords) ** 2, axis=-1)) +sum(CLUSTER_NUM[:s.shape[0]])
-                        # print(tsne_class)
+                        tsne_class = np.argmin(np.sum((tsne.cpu().numpy() - bound_coords) ** 2, axis=-1)) + 5 * (s.shape[0] - 1)
+                        # print(tsne_class, s.shape)
                         output, latent = nets[tsne_class](s[:, :args.input_window, :].reshape(-1, (args.input_window) * 2).float().to(device))
                         loss = loss_func(output,s[:, args.input_window:, :].reshape(-1, args.output_window * 2).float().to(device))
                     avgLoss[tsne_class].append(loss.item())
@@ -263,7 +263,7 @@ def test(args, nets, device, tsne_nets):
                     inputs.append(s.numpy())
                     latents.extend(latent.numpy())
     # breakpoint()
-    print('Avg Test Loss =',np.mean([np.mean(a) for a in avgLoss if a!=[]]))
+    print('Avg Test Loss =',np.mean([np.mean(a) for a in avgLoss]))
     for i in range(len(avgLoss)):
         print('\t Avg Loss '+str(i)+' Cluster:',np.mean(avgLoss[i]))
     return preds, inputs, latents
@@ -297,7 +297,7 @@ def makeTSNELabel():
     max_label = 0
     for i in range(1,args.maxN+1):
         # breakpoint()
-        data = pd.read_csv('diffsData_'+str(i)+'thresh_'+str(args.input_window)+'window.csv')
+        data = pd.read_csv('/Users/faith_johnson/GitRepos/PedTrajPred/equalClusterData/diffsData_'+str(i)+'thresh_'+str(args.input_window)+'window.csv')
         temp = data.filter(['tsne_X', 'tsne_Y', 'newClusters'])
         class_bounds =[]
         for b in range(int(temp['newClusters'].max())+1):
@@ -361,33 +361,33 @@ if __name__=='__main__':
         temp = SimpleRegNetwork(i * (args.input_window - 1) * 2)  # .eval()
         temp.load_state_dict(torch.load(
             '/Users/faith_johnson/GitRepos/PedTrajPred/simpleRegNet_diffsData_' +
-            str(i) + 'people_' + str(args.input_window) + 'window.pt'))
+            str(i) + 'people_' + str(args.input_window) + 'window.pt',map_location=torch.device('cpu')))
         temp.eval()
         tsne_nets.append(temp.to(device))
 
     if args.train:
         nets = []
-        for i in range(sum(CLUSTER_NUM)):
+        for i in range(5 * args.maxN):
             # net = SimplestAutoEncoder(args).to(device)
             # net = SimplestUNet(args)
             temp = SimplestNet(args).to(device)
             # net = SimplestConvNet(args)
             # net = SimplestVAE(args)
             # net = CNNTrajNet(args)
-            temp.load_state_dict(torch.load('simpleNetTSNE_cluster'+str(i)+'.pt', map_location=device))
+            temp.load_state_dict(torch.load('simpleNetTSNE_cluster'+str(i)+'.pt',map_location=torch.device('cpu')))
             nets.append(temp)
         # net.load_state_dict(torch.load('simpleAutoEnc_output.pt'))
         nets = train(args, nets, device, tsne_nets)
 
     nets = []
-    for i in range(sum(CLUSTER_NUM)):
+    for i in range(5 * args.maxN):
         # net = SimplestAutoEncoder(args).to(device)
         # net = SimplestUNet(args)
         temp = SimplestNet(args).to(device)
         # net = SimplestConvNet(args)
         # net = SimplestVAE(args)
         # net = CNNTrajNet(args)
-        temp.load_state_dict(torch.load('simpleNetTSNE_cluster'+str(i)+'.pt', map_location=device))
+        temp.load_state_dict(torch.load('/Users/faith_johnson/GitRepos/PedTrajPred/equalClusterData/simpleNetTSNE_cluster'+str(i)+'.pt',map_location=torch.device('cpu')))
         temp.eval()
         nets.append(temp)
 

@@ -3,10 +3,11 @@ import torch
 import random
 import numpy as np
 from scipy.interpolate import interp1d
+import math
 
 class TrajAugs():
     def __init__(self, num_augs=1, mask_percent=0.25, args=None, include_aug=False):
-        self.augs=[self.flip_horiz, self.flip_vert, self.rotate]#,
+        self.augs=[self.rotate]#, self.flip_horiz, self.flip_vert]#,
         #self.noise, self.resample_up, self.resample_down, self.translate,
         if args:
             self.include_aug = args.include_aug
@@ -63,21 +64,28 @@ class TrajAugs():
 
     def rotate(self, traj):
         # Rotates by 90, 180, or 270 degrees (to the right?)
+        # breakpoint()
         self.rotDegree=random.randint(0,360)#choice([90, 180, 270])
         theta=np.deg2rad(self.rotDegree)
-        rot=np.array([[np.cos(theta), -np.sin(theta)],[np.sin(theta), np.cos(theta)]])
+        # rot=np.array([[np.cos(theta), -np.sin(theta)],[np.sin(theta), np.cos(theta)]])
         # from matplotlib import pyplot as plt
         # for t in traj:
         #     plt.plot(t[:,0],t[:,1],c='b')
         temp = []
         for t in traj:
-            temp.append(np.dot(rot,t.T))
+            # temp.append(np.dot(rot,t.T))
+            ox, oy = 0.5, 0.5
+            px, py = t[:,0], t[:,1]
+
+            qx = ox + math.cos(theta) * (px - ox) - math.sin(theta) * (py - oy)
+            qy = oy + math.sin(theta) * (px - ox) + math.cos(theta) * (py - oy)
+            temp.append(np.vstack([qx,qy]))
         traj=np.stack([t.T for t in temp])
         # for t in traj:
         #     plt.plot(t[:,0],t[:,1],c='tab:orange')
         # plt.show()
         # breakpoint()
-        return traj
+        return torch.tensor(traj).float()
 
     def translate(self, traj):
         inc = random.uniform(-0.05, 0.05)
@@ -85,10 +93,36 @@ class TrajAugs():
         return traj+self.trans_increment
 
     def flip_horiz(self, traj):
-        return traj*np.array([[1,-1]])
+        # breakpoint()
+        # from matplotlib import pyplot as plt
+        # for t in traj:
+        #     plt.plot(t[:,0],t[:,1],c='b')
+        traj = traj*np.array([[1,-1]])
+        m, _ = torch.min(traj, axis=1)
+        m,_ = torch.min(m, axis=0)
+        m[-2]=0
+        traj = traj - m
+        # for t in traj:
+        #     plt.plot(t[:,0],t[:,1],c='tab:orange')
+        # plt.show()
+        # breakpoint()
+        return traj
 
     def flip_vert(self, traj):
-        return traj*np.array([[-1,1]])
+        # breakpoint()
+        # from matplotlib import pyplot as plt
+        # for t in traj:
+        #     plt.plot(t[:, 0], t[:, 1], c='b')
+        traj = traj*np.array([[-1,1]])
+        m, _ = torch.min(traj, axis=1)
+        m, _ = torch.min(m, axis=0)
+        m[-1] = 0
+        traj = traj - m
+        # for t in traj:
+        #     plt.plot(t[:, 0], t[:, 1], c='tab:orange')
+        # plt.show()
+        # breakpoint()
+        return traj
 
 if __name__=='__main__':
     traj=np.array([[1,-1],[0.95,-0.95],[0.9,-0.9],[0.85,-0.85],[0.8,-0.8],[0.75,-0.75],[0.7,-0.7]])

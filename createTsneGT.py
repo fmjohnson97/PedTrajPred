@@ -188,8 +188,9 @@ def loadData(args):
                 # data['plotPos'].append(d['plotPos'].flatten())
 
     if args.traj_thresh is not None:
-        trajData = np.loadtxt('diffsData_' + str(args.traj_thresh) + 'thresh_' + str(
-            args.input_window + args.output_window) + 'window.npy')
+        print('Loading','diffsData_' + str(args.traj_thresh) + 'thresh_' + str(args.input_window + args.output_window) + 'window.npy')
+        trajData = []#np.loadtxt('diffsData_' + str(args.traj_thresh) + 'thresh_' + str(
+            # args.input_window + args.output_window) + 'window.npy')
         dataPD = pd.read_csv('diffsData_' + str(args.traj_thresh) + 'thresh_' + str(
             args.input_window + args.output_window) + 'window.csv')
         # distTrajData = np.loadtxt('distTrajData_' + str(args.traj_thresh) + 'thresh_' + str(
@@ -213,22 +214,22 @@ def centroidnp(arr):
     return sum_x/length, sum_y/length
 
 def custom_clusters(args, diffsData, frames, positions, temp):
-    kmeans = KMeans(n_clusters=args.num_clusters, random_state=0).fit(diffsData)
-    centers = kmeans.cluster_centers_
+    # kmeans = KMeans(n_clusters=args.num_clusters, random_state=0).fit(diffsData)
+    # centers = kmeans.cluster_centers_
 
     fig = plt.figure()
-    plt.scatter(diffsData[:, 0], diffsData[:, 1], c=kmeans.labels_, alpha=0.5)
-    plt.scatter(centers[:, 0], centers[:, 1], c='r')
+    plt.scatter(diffsData[:, 0], diffsData[:, 1], alpha=0.5)
+    # plt.scatter(centers[:, 0], centers[:, 1], c='r')
     plt.title(str(args.traj_thresh) + " Traj Data, " + str(args.num_clusters) + " Clusters, Len " + str(
         args.input_window + args.output_window))
     plt.show()
-    npoints = 5#int(input("How many clusters will you click?"))
+    npoints = 24#int(input("How many clusters will you click?"))
 
     clicks=[]
     for n in range(npoints):
         fig = plt.figure()
-        plt.scatter(diffsData[:, 0], diffsData[:, 1], c=kmeans.labels_, alpha=0.5)
-        plt.scatter(centers[:, 0], centers[:, 1], c='r')
+        plt.scatter(diffsData[:, 0], diffsData[:, 1], alpha=0.5)
+        # plt.scatter(centers[:, 0], centers[:, 1], c='r')
         plt.title(str(args.traj_thresh) + " Traj Data, " + str(args.num_clusters) + " Clusters, Len " + str(
             args.input_window + args.output_window))
         plt.waitforbuttonpress()
@@ -250,8 +251,8 @@ def custom_clusters(args, diffsData, frames, positions, temp):
     temp['newClusters'] = empty
 
     fig = plt.figure()
-    plt.scatter(diffsData[:, 0], diffsData[:, 1], c=kmeans.labels_, alpha=0.5)
-    plt.scatter(centers[:, 0], centers[:, 1], c='r')
+    plt.scatter(diffsData[:, 0], diffsData[:, 1], alpha=0.5)
+    # plt.scatter(centers[:, 0], centers[:, 1], c='r')
     plt.title(str(args.traj_thresh) + " Traj Data, " + str(args.num_clusters) + " Clusters, Len " + str(
         args.input_window + args.output_window))
 
@@ -264,21 +265,23 @@ def custom_clusters(args, diffsData, frames, positions, temp):
 
 if __name__=='__main__':
     args=get_args()
-    diffsData, socData, data = createManifold(args)
-    # diffsData, socData, dataframe, data = loadData(args)
+    # diffsData, socData, data = createManifold(args)
+    diffsData, socData, dataframe, data = loadData(args)
 
     import pandas as pd
-    kmeans = KMeans(n_clusters=args.num_clusters, random_state=0).fit(diffsData)
-    temp=pd.DataFrame()
-    temp['tsne_X']=diffsData[:,0]
-    temp['tsne_Y'] = diffsData[:, 1]
-    temp['pos'] = data['diffs']
-    temp['kmeans'] = kmeans.labels_
-    temp['frames'] = data['posFrames']
-    temp['plotPos']=data['pos']
+    # kmeans = KMeans(n_clusters=args.num_clusters, random_state=0).fit(diffsData)
+    # temp=pd.DataFrame()
+    # temp['tsne_X']=diffsData[:,0]
+    # temp['tsne_Y'] = diffsData[:, 1]
+    # temp['pos'] = data['diffs']
+    # temp['kmeans'] = kmeans.labels_
+    # temp['frames'] = data['posFrames']
+    # temp['plotPos']=data['pos']
     # temp['newClusters']=dataframe['newClusters']
-    temp = custom_clusters(args, diffsData, data['posFrames'], data['plotPos'], temp)
-    temp.to_csv('diffsData_' + str(args.traj_thresh) + 'thresh_'+ str(args.input_window + args.output_window) + 'window.csv') #+ str(args.group_size) + 'group_'
+    # temp = custom_clusters(args, diffsData, data['posFrames'], data['plotPos'], temp)
+    # temp.to_csv('diffsData_' + str(args.traj_thresh) + 'thresh_'+ str(args.input_window + args.output_window) + 'window.csv') #+ str(args.group_size) + 'group_'
+    dataframe = custom_clusters(args, dataframe.filter(['tsne_X','tsne_Y']).values, data['posFrames'], data['plotPos'], dataframe)
+    dataframe.to_csv('diffsData_' + str(args.traj_thresh) + 'thresh_' + str(args.input_window + args.output_window) + 'window.csv')
 
     breakpoint()
     print('Plotting traj data')

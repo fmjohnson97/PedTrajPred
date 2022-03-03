@@ -7,11 +7,17 @@ from glob import glob
 class TSNEGT(Dataset):
     def __init__(self, path, num_clusters, split='train'):
         self.data=pd.read_csv(path)
+        if 'newClusters' in self.data.columns:
+            print('NewClusters')
+            self.data=self.data.filter(['tsne_X','tsne_Y','pos','kmeans','frames','plotPos','newClusters'])
+        else:
+            self.data=self.data.filter(['tsne_X','tsne_Y','pos','kmeans','frames','plotPos'])
+
         self.num_clusters=num_clusters
         if split=='train':
-            self.data=self.data.iloc[:int(len(self.data)*.8)]
+            self.data=self.data.iloc[:int(len(self.data)*.7)]
         else:
-            self.data = self.data.iloc[int(len(self.data) * .8):]
+            self.data = self.data.iloc[int(len(self.data) * .7):]
 
     def __len__(self):
         return len(self.data)
@@ -19,21 +25,21 @@ class TSNEGT(Dataset):
     def __getitem__(self, item):
         # breakpoint()
         try:
-            _, tsneX, tsneY, pos, kmeans, frames, plotPos, newClusters= self.data.iloc[item].tolist()
+            tsneX, tsneY, pos, kmeans, frames, plotPos, newClusters= self.data.iloc[item].tolist()
             originalPos = plotPos[1:-1].strip().split('\n')
             originalPos = [x.strip().split(' ') for x in originalPos]
             originalPos = np.hstack(originalPos)
             originalPos = [float(x.strip()) for x in originalPos if len(x.strip()) > 0]
         except:
             try:
-                _, tsneX, tsneY, pos, kmeans, frames, originalPos = self.data.iloc[item].tolist()
+                tsneX, tsneY, pos, kmeans, frames, originalPos = self.data.iloc[item].tolist()
                 # breakpoint()
                 originalPos = originalPos[1:-1].strip().split('\n')
                 originalPos = [x.strip().split(' ') for x in originalPos]
                 originalPos = np.hstack(originalPos)
                 originalPos = [float(x.strip()) for x in originalPos if len(x.strip()) > 0]
             except:
-                _, tsneX, tsneY, pos, kmeans, frames = self.data.iloc[item].tolist()
+                tsneX, tsneY, pos, kmeans, frames = self.data.iloc[item].tolist()
                 originalPos = []
         pos=pos[1:-1].strip().split('\n')
         pos=[x.strip().split(' ') for x in pos]
