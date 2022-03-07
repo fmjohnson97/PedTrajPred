@@ -104,6 +104,8 @@ class SameSizeData(Dataset):
                     data = self.collateRemainders(data)
                 if len(data['pos'])==0 and len(data['deltas'])==0:
                     data['frames']=np.array([])
+                else:
+                    data = self.newDiffs(data)
             else:
                 data = self.reset(data,['deltas', 'groupIDs', 'distTraj', 'diffs', 'spline'])
 
@@ -118,13 +120,11 @@ class SameSizeData(Dataset):
             temp=[(i,data['pos'][i]) for i in range(len(data['pos']))]
             choices=random.sample(temp, k=self.traj_thresh)
             ids=[data['peopleIDs'][x[0]] for x in choices]
-            distTraj=[data['distTraj'][x[0]] for x in choices]
             diffs=[data['diffs'][x[0]] for x in choices]
             spline = [data['spline'][x[0]] for x in choices]
             pos=[x[1] for x in choices]
             data['peopleIDs']=np.array(ids)
             data['pos']=np.array(pos)
-            data['distTraj']=np.array(distTraj)
             data['diffs']=np.array(diffs)
             data['spline']=np.array(spline)
             # data['pos']=np.array(list(combinations(data['pos'],self.traj_thresh)))
@@ -132,9 +132,9 @@ class SameSizeData(Dataset):
         elif len(data['pos'])< self.traj_thresh:
             data['pos']=np.array([])
             data['peopleIDs']=np.array([])
-            data['distTraj']=np.array([])
             data['diffs'] = np.array([])
             data['spline']=np.array([])
+            data['allDiffs'] = np.array([])
 
         return data
 
@@ -179,13 +179,23 @@ class SameSizeData(Dataset):
 
     def getDistTrajs(self, data):
         # gets the difference between the starting point and all the other points in the trajectory
-        temp=[]
         diff=[]
         for x in data['pos']:
-            temp.append(x-x[0])
-            diff.append(np.diff(x,axis=0))
-        data['distTraj']=np.stack(temp)
+            diff.append(np.diff(x, axis=0))
         data['diffs']=np.stack(diff)
+        return data
+
+    def newDiffs(self, data):
+        allDiffs=[]
+        for i,x in enumerate(data['pos']):
+            temp = np.concatenate((data['pos'][:i], data['pos'][i + 1:]), axis=0)
+            if len(temp)>0:
+                temp = x[1:] - temp[:, :-1, :]
+                # breakpoint()
+                allDiffs.append(np.concatenate((np.diff(x, axis=0).reshape(1,7,2), temp), axis=0))
+            else:
+                allDiffs.append(np.diff(x, axis=0))
+        data['allDiffs'] = np.stack(allDiffs)
         return data
 
     def getImages(self,data):

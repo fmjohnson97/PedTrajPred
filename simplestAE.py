@@ -1,5 +1,5 @@
 import torch
-from tsneGTClusterdataset import TSNEClusterGT
+from plainTrajData import PlainTrajData
 import torch.nn as nn
 import argparse
 from torch.utils.data import DataLoader
@@ -7,26 +7,24 @@ from tqdm import tqdm
 import numpy as np
 from matplotlib import pyplot as plt
 import random
+from sklearn.manifold import TSNE
+from social_cnn_pytorch.main_scripts.train import CNNTrajNet
 from trajAugmentations import TrajAugs
 from simpleTSNEPredict import SimpleRegNetwork
-from collections import defaultdict
-from sklearn.manifold import TSNE
 
-
-CLUSTERS_PER_N = {1:5, 2:13, 3:24}
-CLUSTER_NUM=[0,5,13,24]
+CLUSTERS_PER_N = {1:10, 2:20, 3:35, 4:40, 5:40}
 
 class SimplestNet(nn.Module):
     def __init__(self, args):
         super(SimplestNet, self).__init__()
-        self.fc1=nn.Linear((args.input_window)*2,32)
-        self.fc2 = nn.Linear(32, 64)
-        self.fc3 = nn.Linear(64+32, 32)
-        self.outfc=nn.Linear(32+32+64, args.output_window*2)
-        # self.fc1 = nn.Linear((args.input_window) * 4, 64)
-        # self.fc2 = nn.Linear(64, 64)
-        # self.fc3 = nn.Linear(64+64, 32)
-        # self.outfc=nn.Linear(32+2*64, args.output_window*2)
+        # self.fc1=nn.Linear((args.input_window+1)*2,32)
+        # self.fc2 = nn.Linear(32, 64)
+        # self.fc3 = nn.Linear(64+32, 32)
+        # self.outfc=nn.Linear(32+32+64, args.output_window*2)
+        self.fc1 = nn.Linear((args.input_window) * 4, 64)
+        self.fc2 = nn.Linear(64, 64)
+        self.fc3 = nn.Linear(64+64, 32)
+        self.outfc=nn.Linear(32+2*64, args.output_window*2)
         self.relu = nn.LeakyReLU()
 
     def forward(self, x):
@@ -162,106 +160,92 @@ def get_args():
     parser.add_argument('--input_window', default=8, type=int, help='number of frames for the input data')
     parser.add_argument('--output_window', default=12, type=int, help='number of frames for the output data')
     parser.add_argument('--batch_size', default=1, type=int)
-    parser.add_argument('--epochs', default=2500, type=int)
-    parser.add_argument('--maxN', default=3, type=int)
+    parser.add_argument('--epochs', default=20, type=int)
+    parser.add_argument('--maxN', default=5, type=int)
     parser.add_argument('--lr', default=1e-2, type=float)
     parser.add_argument('--train', action='store_true')
+
+    # CNNTraj parameters
+    parser.add_argument('--input_size', default=8, type=int, help='number of frames for the input data')
+    parser.add_argument('--output_size', default=12, type=int, help='number of frames for the output data')
+    parser.add_argument('--embedding_size', default=32, type=int, help='size of the embedding')
+    parser.add_argument('--dropout_rate', default=0.06, type=float)
 
     args = parser.parse_args()
     return args
 
-def train(args, net, device, N, cluster_num):
+def train(args, net, device, tsne_nets):
     min_loss = np.inf
     trajAugs = TrajAugs()
-    dataset = TSNEClusterGT(N, cluster_num)
-    loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False)
-    opt=torch.optim.Adam(net.parameters(), lr=args.lr)
-    scheduler=torch.optim.lr_scheduler.CosineAnnealingLR(opt, args.epochs * len(dataset), 1e-12)
+    opt = torch.optim.Adam(net.parameters(), lr=args.lr)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(opt, args.epochs * 10000, 1e-12)
     loss_func = nn.MSELoss() #nn.BCELoss() #
     for e in tqdm(range(args.epochs)):
         avgLoss=[]
-        # breakpoint()
-        if len(loader)<1:
-            break
-        for data in loader:
-            pos, tsne = data
-            pos = pos.reshape(N, args.input_window+args.output_window, 2)
-            pos = trajAugs.augment(pos)
-            output, latent = net(pos[:,:args.input_window,:].reshape(-1, (args.input_window) * 2).float().to(device))
-            opt.zero_grad()
-            loss = loss_func(output, pos[:, args.input_window:, :].reshape(-1,args.output_window*2).float().to(device))
-            avgLoss.append(loss.item())
-            loss.backward()
-            opt.step()
-            scheduler.step()
-        if e%10==0:
-            print("Epoch",e,': Loss =',np.mean(avgLoss))
+        for name in ['ETH', 'ETH_Hotel', 'UCY_Zara1', 'UCY_Zara2']:
+            dataset = PlainTrajData(name, input_window=args.input_window, output_window=args.output_window, maxN=args.maxN)
+            loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False)
+            for data in loader:
+                if data['pos'].nelement()>0:
+                    # breakpoint()
+                    scene = torch.tensor(trajAugs.augment(data['pos'][0].numpy()))
+                    # diffs = torch.tensor(np.diff(scene, axis=1))
+                    # vels = torch.cat((torch.zeros(scene.shape[0],1,2),diffs[:,:args.input_window-1,:]),axis=1)
+                    # input_scene = torch.cat((scene[:,:args.input_window,:],vels),axis=-1)
+                    with torch.no_grad():
+                        try:
+                            tsne_net = tsne_nets[scene.shape[0] - 1]
+                        except:
+                            continue
+                        tsne = tsne_net(data['diffs'][0][:, :(args.input_window - 1), :].flatten().float())
+                    input_scene = torch.cat((scene[:, :args.input_window, :], torch.ones(scene.shape[0],args.input_window,2)*nn.functional.normalize(tsne.unsqueeze(0))), axis = -1)
+                    output, latent = net(input_scene.reshape(-1, (args.input_window) * 4).float().to(device))
+                    opt.zero_grad()
+                    loss = loss_func(output, scene[:, args.input_window:, :].reshape(-1,args.output_window*2).float().to(device))
+                    loss.backward()
+                    opt.step()
+                    scheduler.step()
+                    avgLoss.append(loss.item())
+        print("Epoch",e,': Loss =',np.mean(avgLoss))
         if np.mean(avgLoss)<min_loss:
-            torch.save(net.state_dict(),'simpleNetTSNE_'+str(N)+'_cluster'+str(cluster_num)+'.pt')
+            # for i in range(1, args.maxN + 1):
+            #     torch.save('simpleRegNet_noNorm_diffsData_' + str(i) + 'people_' + str(args.input_window) + 'window.pt')
+            torch.save(net.state_dict(),'simpleNetTSNE.pt')
             min_loss=np.mean(avgLoss)
-        if np.mean(avgLoss)<4.8e-4:
-            torch.save(net.state_dict(),'simpleNetTSNE_'+str(N)+'_cluster'+str(cluster_num)+'.pt')
-            print("Epoch",e,': Loss =',np.mean(avgLoss))
-            break
     return net
 
-def test(args, net, device, N, cluster_num):
+def test(args, net, device, tsne_nets):
+    net.eval()
     loss_func = nn.MSELoss() #nn.BCELoss() #
-    preds=[]
-    inputs=[]
-    latents=[]
-    avgLoss = []
-    dataset = TSNEClusterGT(N, cluster_num)
-    loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False)
-    for data in loader:
-        pos, tsne = data
-        pos = pos.reshape(N, args.input_window+args.output_window, 2)
-        with torch.no_grad():
-            output, latent = net(pos[:, :args.input_window, :].reshape(-1, (args.input_window) * 2).to(device))
-            loss = loss_func(output, pos[:, args.input_window:, :].reshape(-1, args.output_window * 2).to(device))
-        avgLoss.append(loss.item())
-        inputs.append(pos.numpy())
-        # latents.append(latent.numpy())
-        preds.append(output.numpy())
-    print('Avg Test Loss =',np.mean(avgLoss))
-    return preds, inputs, latents, avgLoss
-
-def testAll(args, nets, device, maxN):
-    loss_func = nn.MSELoss()  # nn.BCELoss() #
+    avgLoss=[]
     preds = []
     inputs = []
     latents = []
-    avgLoss = []
-    groups=[]
-    for n in range(1,maxN+1):
-        for c in range(CLUSTER_NUM[n]):
-            dataset = TSNEClusterGT(n, c)
-            loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False)
-            for data in loader:
-                pos, tsne = data
-                pos = pos.reshape(n, args.input_window + args.output_window, 2)
-                with torch.no_grad():
-                    minLoss=np.inf
-                    minOutput=[]
-                    group=[c,c]
-                    for i,net in enumerate(nets[n-1]):
-                        output, latent = net(pos[:, :args.input_window, :].reshape(-1, (args.input_window) * 2).to(device))
-                        loss = loss_func(output, pos[:, args.input_window:, :].reshape(-1, args.output_window * 2).to(device))
-                        # print(loss.item())
-                        if loss.item()<minLoss:
-                            minLoss=loss.item()
-                            minOutput=output
-                            group[1]=i
-                avgLoss.append(minLoss)
-                inputs.append(pos.numpy())
-                groups.append(groups)
-                # latents.append(latent.numpy())
+    for name in ['ETH', 'ETH_Hotel', 'UCY_Zara1', 'UCY_Zara2']:
+        dataset = PlainTrajData(name, input_window=args.input_window, output_window=args.output_window, maxN=args.maxN, split='test')
+        loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False)
+        for data in loader:
+            if data['pos'].nelement() > 0:
                 # breakpoint()
-                preds.append(minOutput.numpy())
-    print('Avg Test Loss =', np.mean(avgLoss))
-    print('Correspondences:',sum([g[0]==g[1] for g in groups]),'out of',len(groups))
-    return preds, inputs, latents, avgLoss, groups
-
+                with torch.no_grad():
+                    scene = data['pos'][0]
+                    # diffs = torch.tensor(np.diff(scene, axis=1))
+                    # vels = torch.cat((torch.zeros(scene.shape[0], 1, 2), diffs[:, :args.input_window - 1, :]), axis=1)
+                    # input_scene = torch.cat((scene[:, :args.input_window, :], vels), axis=-1)
+                    try:
+                        tsne_net = tsne_nets[scene.shape[0] - 1]
+                    except:
+                        continue
+                    tsne = tsne_net(data['diffs'][0][:, :(args.input_window - 1), :].flatten().float())
+                    input_scene = torch.cat((scene[:, :args.input_window, :], torch.ones(scene.shape[0], args.input_window, 2) * nn.functional.normalize(tsne.unsqueeze(0))),axis=-1)  #
+                    output, latent = net(input_scene.reshape(-1, (args.input_window) * 4).float().to(device))
+                loss = loss_func(output,scene[:, args.input_window:, :].reshape(-1, args.output_window * 2).float().to(device))
+                avgLoss.append(loss.item())
+                preds.append(output.numpy())
+                inputs.append(data['pos'][0].float())
+                latents.extend(latent.numpy())
+    print('Avg Test Loss =',np.mean(avgLoss))
+    return preds, inputs, latents
 
 def graph(args, inputs, predictions=None, name=None):
     plt.figure()
@@ -280,72 +264,49 @@ def graph(args, inputs, predictions=None, name=None):
             # plt.plot(pos[:,0], pos[:,1], c='tab:orange')
             # plt.scatter(pos[0][0], pos[0][1], c='tab:orange')
             plt.scatter(pos[0], pos[1], c='tab:orange')
-        plt.legend(['Input','Ground truth', 'Predictions'])
     plt.title(name)
-
 
 if __name__=='__main__':
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     args = get_args()
+    # net = SimplestAutoEncoder(args).to(device)
+    # net = SimplestUNet(args)
+    net = SimplestNet(args).to(device)
+    # net = SimplestConvNet(args)
+    # net = SimplestVAE(args)
+    # net = CNNTrajNet(args)
+
+    tsne_nets = []
+    N = np.array(range(1, args.maxN + 1))
 
     if args.train:
-        for n in range(1,args.maxN+1):
-            for c in range(CLUSTER_NUM[n]):
-                print('People:', n, 'Cluster:', c)
-                net = SimplestNet(args).to(device)
-                try:
-                    net.load_state_dict(torch.load('simpleNetTSNE_'+str(n)+'_cluster'+str(c)+'.pt', map_location=device))
-                except:
-                    pass
-                net = train(args, net, device, n, c)
-                preds, inputs, latents, loss = test(args, net, device, n, c)
-                # if len(latents) > 0:
-                #     tsne = TSNE()
-                #     latents = tsne.fit_transform(latents)
-                #     graph(args, latents, name='Learned Latent Space')
-                #
-                # for i in range(10):
-                #     graph(args, inputs, preds, name='Inputs vs Predictions')
-                #
-                # plt.show()
+        for i in N:
+            temp = SimpleRegNetwork(i * (args.input_window - 1) * 2)  # .eval()
+            temp.load_state_dict(torch.load(
+                '/Users/faith_johnson/GitRepos/PedTrajPred/weights/simpleRegNet_noNorm_diffsData_' + str(
+                    i) + 'people_' + str(
+                    args.input_window) + 'window.pt'))
+            tsne_nets.append(temp.to(device))  # .eval()
 
-    test_loss=[]
-    for n in range(2, args.maxN + 1):
-        for c in range(CLUSTER_NUM[n]):
-            print('People:',n,'Cluster:',c)
-            net = SimplestNet(args).to(device)
-            try:
-                net.load_state_dict(torch.load('simpleNetTSNE_'+str(n)+'_cluster'+str(c)+'.pt', map_location=device))
-                net.eval()
-                preds, inputs, latents, loss = test(args, net, device, n, c)
-                test_loss.extend(loss)
-                if len(latents) > 0:
-                    tsne = TSNE()
-                    latents = tsne.fit_transform(latents)
-                    graph(args, latents, name='Learned Latent Space')
+        # net.load_state_dict(torch.load('simpleAutoEnc_output.pt'))
+        net = train(args, net.to(device), device, tsne_nets)
 
-                for i in range(10):
-                    graph(args, inputs, preds, name=str(n)+' People, Cluster '+str(c)+', Inputs vs Predictions')
+    net.load_state_dict(torch.load('simpleNetTSNE.pt'))
+    net.eval()
+    net = net.to(device)
+    for i in N:
+        temp = SimpleRegNetwork(i * (args.input_window - 1) * 2).eval()
+        temp.load_state_dict(torch.load('/Users/faith_johnson/GitRepos/PedTrajPred/weights/simpleRegNet_noNorm_diffsData_' + str(i) + 'people_' + str(args.input_window) + 'window.pt'))
+        tsne_nets.append(temp.eval())
 
-                plt.show()
-            except Exception as e:
-                print(e)
-                continue
-    print('Total Avg Loss:', np.mean(test_loss))
+    preds, inputs, latents = test(args, net, device, tsne_nets)
+    # breakpoint()
+    if len(latents)>0:
+        tsne=TSNE()
+        latents=tsne.fit_transform(latents)
+        graph(args, latents, name='Learned Latent Space')
 
-    # nets=[[],[],[]]
-    # for n in range(1, args.maxN + 1):
-    #     for c in range(CLUSTER_NUM[n]):
-    #         print('People:', n, 'Cluster:', c)
-    #         net = SimplestNet(args).to(device)
-    #         try:
-    #             net.load_state_dict(torch.load('simpleNetTSNE_'+str(n)+'_cluster'+str(c)+'.pt', map_location=device))
-    #         except:
-    #             continue
-    #         net.eval()
-    #         nets[n-1].append(net)
-    #
-    # preds, inputs, latents, loss, groups = testAll(args, nets, device, args.maxN)
-    # for i in range(30):
-    #     graph(args, inputs, preds, name=str(n)+' People, '+str(c)+'Cluster, Inputs vs Predictions')
-    # plt.show()
+    for i in range(10):
+        graph(args, inputs, preds, name='Inputs vs Predictions')
+
+    plt.show()

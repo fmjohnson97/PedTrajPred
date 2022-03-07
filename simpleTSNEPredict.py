@@ -205,7 +205,12 @@ if __name__ == '__main__':
         net.load_state_dict(torch.load('simpleRegNet_diffsData_' + str(args.num_people) + 'people_' + str(args.window)+'window.pt'))
 
     net.eval()
-    graphPreds(net, loader, args)
+    # graphPreds(net, loader, args)
+    dataset = TSNEGT(args.path + 'diffsData_' + str(args.num_people) + 'thresh_' + str(args.window) + 'window.csv',
+                     args.num_clusters)
+    # dataset = TSNEGT(args.path + 'socData_' + str(args.num_people) + 'thresh_'+ str(args.num_people) +'group_8window.csv', args.num_clusters, split='test')
+    loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True)
+    test(net, loader, args)
 
     dataset = TSNEGT(args.path + 'diffsData_' + str(args.num_people) + 'thresh_'+str(args.window)+'window.csv', args.num_clusters, split='test')
     # dataset = TSNEGT(args.path + 'socData_' + str(args.num_people) + 'thresh_'+ str(args.num_people) +'group_8window.csv', args.num_clusters, split='test')

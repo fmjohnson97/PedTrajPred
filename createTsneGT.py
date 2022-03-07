@@ -17,7 +17,7 @@ def find_nearest(data, coord):
 
 def get_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--num_clusters', default=50, type=int, help='number of clusters for kmeans')
+    parser.add_argument('--num_clusters', default=10, type=int, help='number of clusters for kmeans')
     parser.add_argument('--input_window', default=8, type=int, help='number of frames for the input data')
     parser.add_argument('--output_window', default=0, type=int, help='number of frames for the output data')
     parser.add_argument('--group_size', default=2, type=int, help='number of people to include in each dist group')
@@ -121,18 +121,18 @@ def createManifold(args):
             if len(d['pos']) > 0:
                 # breakpoint()
                 data['pos'].append(d['pos'].flatten())
-                data['distTraj'].append(d['distTraj'].flatten())
                 data['diffs'].append(d['diffs'].flatten())
                 data['spline'].append(d['spline'].flatten())
                 data['peopleIDs'].append(d['peopleIDs'])
                 data['posFrames'].append(d['frames'])
+                data['allDiffs'].append(d['allDiffs'].flatten())
 
-            if len(d['deltas']) > 0:
-                # breakpoint()
-                data['deltas'].append(d['deltas'].flatten())
-                data['groupIDs'].append(d['groupIDs'])
-                data['groupFrames'].append(d['frames'])
-                data['plotPos'].append(d['plotPos'].flatten())
+            # if len(d['deltas']) > 0:
+            #     # breakpoint()
+            #     data['deltas'].append(d['deltas'].flatten())
+            #     data['groupIDs'].append(d['groupIDs'])
+            #     data['groupFrames'].append(d['frames'])
+            #     data['plotPos'].append(d['plotPos'].flatten())
 
 
     print('creating the tsne embedding')
@@ -145,16 +145,16 @@ def createManifold(args):
         # print(len(data['distTraj']))
         # distTrajData = tsne.fit_transform(data['distTraj'])
         # np.savetxt('distTrajData_' + str(args.traj_thresh) + 'thresh_' + str(args.input_window + args.output_window) + 'window.npy', distTrajData)
-        print(len(data['diffs']))
-        diffsData = tsne.fit_transform(data['diffs'])
-        np.savetxt('diffsData_' + str(args.traj_thresh) + 'thresh_' + str(args.input_window + args.output_window) + 'window.npy', diffsData)
+        print(len(data['allDiffs']))
+        diffsData = tsne.fit_transform(data['allDiffs'])
+        # np.savetxt('diffsData_' + str(args.traj_thresh) + 'thresh_' + str(args.input_window + args.output_window) + 'window.npy', diffsData)
         # print(len(data['spline']))
         # splineData = tsne.fit_transform(data['spline'])
         # np.savetxt('splineData_' + str(args.traj_thresh) + 'thresh_' + str(
         #     args.input_window + args.output_window) + 'window.npy', splineData)
 
     if args.social_thresh is not None:
-        print(len(data['deltas']))
+        # print(len(data['deltas']))
         socData = []#tsne.fit_transform(data['deltas'])
         # np.savetxt('socData_' + str(args.social_thresh) + 'thresh_' + str(args.group_size) + 'group_' + str(
         #     args.input_window + args.output_window) + 'window.npy', socData)
@@ -175,7 +175,6 @@ def loadData(args):
 
             if len(d['pos']) > 0:
                 data['pos'].append(d['pos'].flatten())
-                # data['distTraj'].append(d['distTraj'].flatten())
                 data['diffs'].append(d['diffs'].flatten())
                 # data['spline'].append(d['spline'].flatten())
                 data['peopleIDs'].append(d['peopleIDs'])
@@ -223,7 +222,7 @@ def custom_clusters(args, diffsData, frames, positions, temp):
     plt.title(str(args.traj_thresh) + " Traj Data, " + str(args.num_clusters) + " Clusters, Len " + str(
         args.input_window + args.output_window))
     plt.show()
-    npoints = 24#int(input("How many clusters will you click?"))
+    npoints = 10#int(input("How many clusters will you click?"))
 
     clicks=[]
     for n in range(npoints):
@@ -265,23 +264,23 @@ def custom_clusters(args, diffsData, frames, positions, temp):
 
 if __name__=='__main__':
     args=get_args()
-    # diffsData, socData, data = createManifold(args)
-    diffsData, socData, dataframe, data = loadData(args)
+    diffsData, socData, data = createManifold(args)
+    # diffsData, socData, dataframe, data = loadData(args)
 
     import pandas as pd
-    # kmeans = KMeans(n_clusters=args.num_clusters, random_state=0).fit(diffsData)
-    # temp=pd.DataFrame()
-    # temp['tsne_X']=diffsData[:,0]
-    # temp['tsne_Y'] = diffsData[:, 1]
-    # temp['pos'] = data['diffs']
-    # temp['kmeans'] = kmeans.labels_
-    # temp['frames'] = data['posFrames']
-    # temp['plotPos']=data['pos']
-    # temp['newClusters']=dataframe['newClusters']
+    kmeans = KMeans(n_clusters=args.num_clusters, random_state=0).fit(diffsData)
+    temp=pd.DataFrame()
+    temp['tsne_X']=diffsData[:,0]
+    temp['tsne_Y'] = diffsData[:, 1]
+    temp['pos'] = data['allDiffs']
+    temp['kmeans'] = kmeans.labels_
+    temp['frames'] = data['posFrames']
+    temp['plotPos']=data['pos']
+    temp['newClusters']=kmeans.labels_#dataframe['newClusters']
     # temp = custom_clusters(args, diffsData, data['posFrames'], data['plotPos'], temp)
-    # temp.to_csv('diffsData_' + str(args.traj_thresh) + 'thresh_'+ str(args.input_window + args.output_window) + 'window.csv') #+ str(args.group_size) + 'group_'
-    dataframe = custom_clusters(args, dataframe.filter(['tsne_X','tsne_Y']).values, data['posFrames'], data['plotPos'], dataframe)
-    dataframe.to_csv('diffsData_' + str(args.traj_thresh) + 'thresh_' + str(args.input_window + args.output_window) + 'window.csv')
+    temp.to_csv('allDiffsData_' + str(args.traj_thresh) + 'thresh_'+ str(args.input_window + args.output_window) + 'window.csv') #+ str(args.group_size) + 'group_'
+    # dataframe = custom_clusters(args, dataframe.filter(['tsne_X','tsne_Y']).values, data['posFrames'], data['plotPos'], dataframe)
+    # dataframe.to_csv('diffsData_' + str(args.traj_thresh) + 'thresh_' + str(args.input_window + args.output_window) + 'window.csv')
 
     breakpoint()
     print('Plotting traj data')

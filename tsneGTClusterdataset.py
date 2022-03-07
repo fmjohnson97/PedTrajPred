@@ -10,6 +10,7 @@ from simpleTSNEPredict import SimpleRegNetwork
 class TSNEClusterGT(Dataset):
     def __init__(self, N, cluster_num, split='train'):
         self.data=pd.read_csv('ETH_UCY_GT.csv')
+        # self.data=pd.read_csv('just_Zara1_GT.csv')
         #'tsne_X', 'tsne_Y', 'N', 'cluster', 'pos'
         self.data = self.data.iloc[(self.data['N'] == N).values]
         self.data = self.data.iloc[(self.data['cluster']==cluster_num).values]
@@ -26,7 +27,7 @@ class TSNEClusterGT(Dataset):
 
     def __getitem__(self, item):
         # breakpoint()
-        _, tsneX, tsneY, N, cluster, pos= self.data.iloc[item].tolist()
+        _, tsneX, tsneY, N, cluster, pos, dataset= self.data.iloc[item].tolist()
         pos = pos[1:-1].strip().split('\n')
         pos = [x.strip().split(' ') for x in pos]
         pos = np.hstack(pos)
@@ -111,7 +112,8 @@ def getClusterGT(input_window, maxN):
 
     CLUSTER_NUM = [0,5,13,24]
     temp=[]
-    for name in ['ETH', 'ETH_Hotel', 'UCY_Zara1', 'UCY_Zara2']:
+    preds=[[],[],[]]
+    for name in ['UCY_Zara2','UCY_Zara1','ETH_Hotel','ETH']:
         dataset = PlainTrajData(name, input_window=8, output_window=12)
         loader = DataLoader(dataset, batch_size=1, shuffle=False)
         for data in loader:
@@ -128,15 +130,24 @@ def getClusterGT(input_window, maxN):
                         # TSNE_N_CUTOFFS, TSNE_BOUNDS[class](max,min)
                         tsne_net = tsne_nets[s.shape[0] - 1]
                         tsne = tsne_net(diffs[:, :(input_window - 1), :].flatten().float())
+                        preds[s.shape[0]-1].append(tsne.numpy())
                         bound_coords = np.array(TSNE_BOUNDS[s.shape[0]])
                         tsne_class = np.argmin(np.sum((tsne.numpy() - bound_coords) ** 2, axis=-1)) + sum(CLUSTER_NUM[:s.shape[0]])
-                    temp.append([tsne.numpy()[0],tsne.numpy()[1],s.shape[0],tsne_class.item(),s.flatten()])
+                    temp.append([tsne.numpy()[0],tsne.numpy()[1],s.shape[0],tsne_class.item(),s.flatten(), name])
     # breakpoint()
-    frame = pd.DataFrame(temp,columns=['tsne_X', 'tsne_Y', 'N', 'cluster', 'pos'], dtype=float)
+    frame = pd.DataFrame(temp,columns=['tsne_X', 'tsne_Y', 'N', 'cluster', 'pos', 'dataset'], dtype=float)
     frame.to_csv('ETH_UCY_GT.csv')
+    from matplotlib import pyplot as plt
+    # breakpoint()
+    for i in range(len(preds)):
+        temp=np.stack(preds[i])
+        plt.scatter(temp[:,0],temp[:,1])
+        plt.title('Predicted Traj Clusters, N='+str(i))
+        plt.show()
+    # frame.to_csv('just_Zara2_GT.csv')
 
 if __name__ == '__main__':
     makeTSNELabel(3,8)
     getClusterGT(8,3)
-    x=TSNEClusterGT(1,0)
-    x.__getitem__(10)
+    # x=TSNEClusterGT(1,0)
+    # x.__getitem__(10)
