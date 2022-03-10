@@ -23,18 +23,33 @@ def plotTSNE(data, original, color):
         for coords in points_clicked:
             points.append(find_nearest(data, coords))
 
+        # for i, point in enumerate(points):
+        #     plt.figure()
+        #     for pos in original[point].reshape(-1, 16, 2):
+        #         plt.plot(pos[:,0], pos[:,1])
+        #         plt.scatter(pos[0][0], pos[0][1])
+        #         plt.title('Point '+str(i))
+        # plt.figure()
+        # plt.scatter(data[:, 0], data[:, 1], c=color, alpha=0.5)
+        # for point in points:
+        #     plt.scatter(data[point][0], data[point][1], c='k', alpha=1)
+        # plt.title('TSNE Embedding for N=3 Trajectories')
+        # plt.show()
+        colors=['b','r','g']
         for i, point in enumerate(points):
-            plt.figure()
-            for pos in original[point].reshape(-1, 16, 2):
-                plt.plot(pos[:,0], pos[:,1])
-                plt.scatter(pos[0][0], pos[0][1])
-                plt.title('Point '+str(i))
-        plt.figure()
-        plt.scatter(data[:, 0], data[:, 1], c=color, alpha=0.5)
-        for point in points:
-            plt.scatter(data[point][0], data[point][1], c='k', alpha=1)
-        plt.title('TSNE Embedding for N=3 Trajectories')
-        plt.show()
+            fig = plt.figure()
+            ax = fig.add_subplot(111)
+            pos = original[point].reshape(-1, 8, 2)
+            for p in range(8):
+                ax.clear()
+                ax.axis([0, 1, 0, 1])
+                ax.set_title('Point ' + str(i))
+                for j, person in enumerate(pos[:,:p,:]):
+                    ax.scatter(person[:,0], person[:,1], c=colors[j])
+
+                    # ax.show()
+                plt.pause(0.5)
+
 
 def plotClusters(df):
     colors = ['b', 'y', 'g']
@@ -43,7 +58,7 @@ def plotClusters(df):
         plt.figure()
         for p in plot:
             # breakpoint()
-            p = p.reshape(-1, 16, 2)
+            p = p.reshape(-1, 8, 2)
             # for j, pos in enumerate(p):
             plt.plot(p[0, :, 0], p[0, :, 1], c=colors[0])
             plt.scatter(p[0, 0, 0], p[0, 0, 1])#, c='r')
@@ -102,7 +117,7 @@ def makeTSNELabel(maxN, input_window):
 
 #[0,5,13,24]
 # makeTSNELabel(3, 8)
-df=pd.read_csv('/Users/faith_johnson/GitRepos/PedTrajPred/AlldiffsData_3thresh_8window.csv')#, index_col=0)
+df=pd.read_csv('/Users/faith_johnson/GitRepos/PedTrajPred/allDiffsData3_3thresh_8window.csv')#, index_col=0)
 # for i in range(24):
 #     plt.scatter(df['tsne_X'], df['tsne_Y'], c='r')
 #     temp = df[(df['newClusters']==i)]

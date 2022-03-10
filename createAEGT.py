@@ -2,14 +2,13 @@ from sklearn.manifold import TSNE
 from sklearn.cluster import KMeans
 import argparse
 from torch.utils.data import DataLoader
-from sameSizeData import SameSizeData
-import cv2
 import numpy as np
 from matplotlib import pyplot as plt
 from collections import defaultdict
 import pandas as pd
-from sklearn.decomposition import PCA
-
+from simplestAE import SimplestAutoEncoder
+import torch
+from sameSizeData import SameSizeData
 
 # finds the nearest value in the array of points to the location of the mouse click
 def find_nearest(data, coord):
@@ -21,10 +20,7 @@ def get_args():
     parser.add_argument('--num_clusters', default=10, type=int, help='number of clusters for kmeans')
     parser.add_argument('--input_window', default=8, type=int, help='number of frames for the input data')
     parser.add_argument('--output_window', default=0, type=int, help='number of frames for the output data')
-    parser.add_argument('--group_size', default=2, type=int, help='number of people to include in each dist group')
-    parser.add_argument('--dist_thresh', default=0.0085, type=float, help='max avg distance to count people in the same social group')
     parser.add_argument('--traj_thresh', default=2, type=int, help='number of trajectories in each data point')
-    parser.add_argument('--social_thresh', default=2,  type=int, help='number of social groups in each data point')
     args = parser.parse_args()
     return args
 
@@ -110,82 +106,50 @@ def plotTSNE(data, frames, original, color=None):
         #     cv2.imshow('', im)#.numpy())
         #     cv2.waitKey(1000)
 
-def createManifold(args):
+def createManifold(args, net):
     data = defaultdict(list)
     print("getting and flattening the data")
     # get the data from each dataset
     for name in ['ETH', 'ETH_Hotel', 'UCY_Zara1', 'UCY_Zara2']:
-        dataset = SameSizeData(name, input_window=args.input_window, output_window=args.output_window, group_size=args.group_size,
-                               distThresh=args.dist_thresh,
-                               trajThresh=args.traj_thresh, socialThresh=args.social_thresh)
-        for i, d in enumerate(dataset):
-            if len(d['pos']) > 0:
+        dataset = SameSizeData(name, input_window=args.input_window, output_window=args.output_window,
+                               trajThresh=args.traj_thresh)
+        loader = DataLoader(dataset, batch_size=1, shuffle=False)
+        for d in loader:
+            if d['pos'].nelement() > 0:
                 # breakpoint()
-                data['pos'].append(d['pos'].flatten())
-                data['diffs'].append(d['diffs'].flatten())
-                data['spline'].append(d['spline'].flatten())
-                data['peopleIDs'].append(d['peopleIDs'])
-                data['posFrames'].append(d['frames'])
-                data['allDiffs'].append(d['allDiffs'].flatten())
-
-            # if len(d['deltas']) > 0:
-            #     # breakpoint()
-            #     data['deltas'].append(d['deltas'].flatten())
-            #     data['groupIDs'].append(d['groupIDs'])
-            #     data['groupFrames'].append(d['frames'])
-            #     data['plotPos'].append(d['plotPos'].flatten())
-
+                scene = d['pos'][0]
+                with torch.no_grad():
+                    output, latent = net(scene.reshape(-1, (args.input_window) * 2).float().to(device))
+                data['latent'].append(latent.flatten().numpy())
+                data['pos'].append(scene)
+                data['frames'].append(d['frames'])
 
     print('creating the tsne embedding')
     # breakpoint()
     tsne = TSNE()
     if args.traj_thresh is not None:
-        # print(len(data['pos']))
-        # trajData = tsne.fit_transform(data['pos'])
-        # np.savetxt('trajData_' + str(args.traj_thresh) + 'thresh_' + str(args.input_window + args.output_window) + 'window.npy', trajData)
-        # print(len(data['distTraj']))
-        # distTrajData = tsne.fit_transform(data['distTraj'])
-        # np.savetxt('distTrajData_' + str(args.traj_thresh) + 'thresh_' + str(args.input_window + args.output_window) + 'window.npy', distTrajData)
-        print(len(data['allDiffs']))
-        diffsData = tsne.fit_transform(data['allDiffs'])
-        # np.savetxt('diffsData_' + str(args.traj_thresh) + 'thresh_' + str(args.input_window + args.output_window) + 'window.npy', diffsData)
-        # print(len(data['spline']))
-        # splineData = tsne.fit_transform(data['spline'])
-        # np.savetxt('splineData_' + str(args.traj_thresh) + 'thresh_' + str(
-        #     args.input_window + args.output_window) + 'window.npy', splineData)
+        print(len(data['latent']))
+        diffsData = tsne.fit_transform(data['latent'])
 
-    if args.social_thresh is not None:
-        # print(len(data['deltas']))
-        socData = []#tsne.fit_transform(data['deltas'])
-        # np.savetxt('socData_' + str(args.social_thresh) + 'thresh_' + str(args.group_size) + 'group_' + str(
-        #     args.input_window + args.output_window) + 'window.npy', socData)
-
-    return diffsData, socData, data
+    return diffsData, data
 
 
-def loadData(args):
+def loadData(args, net):
     trajData, socData = None, None
     data=defaultdict(list)
     for name in ['ETH', 'ETH_Hotel', 'UCY_Zara1', 'UCY_Zara2']:
-        dataset = SameSizeData(name, output_window=args.output_window, group_size=args.group_size,
-                               distThresh=args.dist_thresh,
-                               trajThresh=args.traj_thresh, socialThresh=args.social_thresh)
-        for i, d in enumerate(dataset):
-            # if i>len(dataset)/2:
-            #     break
-
-            if len(d['pos']) > 0:
-                data['pos'].append(d['pos'].flatten())
-                data['diffs'].append(d['diffs'].flatten())
-                # data['spline'].append(d['spline'].flatten())
-                data['peopleIDs'].append(d['peopleIDs'])
-                data['posFrames'].append(d['frames'])
-
-            # if len(d['deltas']) > 0:
-                # data['deltas'].append(d['deltas'].flatten())
-                # data['groupIDs'].append(d['groupIDs'])
-                # data['groupFrames'].append(d['frames'])
-                # data['plotPos'].append(d['plotPos'].flatten())
+        dataset = SameSizeData(name, input_window=args.input_window, output_window=args.output_window,
+                               trajThresh=args.traj_thresh)
+        loader = DataLoader(dataset, batch_size=1, shuffle=False)
+        for d in loader:
+            if d['pos'].nelement() > 0:
+                # breakpoint()
+                scene = d['pos'][0]
+                with torch.no_grad():
+                    output, latent = net(scene.reshape(-1, (args.input_window) * 2).float().to(device))
+                data['latent'].append(latent.flatten().numpy())
+                data['pos'].append(scene)
+                data['frames'].append(d['frames'])
 
     if args.traj_thresh is not None:
         print('Loading','diffsData_' + str(args.traj_thresh) + 'thresh_' + str(args.input_window + args.output_window) + 'window.npy')
@@ -193,17 +157,6 @@ def loadData(args):
             # args.input_window + args.output_window) + 'window.npy')
         dataPD = pd.read_csv('diffsData_' + str(args.traj_thresh) + 'thresh_' + str(
             args.input_window + args.output_window) + 'window.csv')
-        # distTrajData = np.loadtxt('distTrajData_' + str(args.traj_thresh) + 'thresh_' + str(
-        #     args.input_window + args.output_window) + 'window.npy')
-        # diffsData = np.loadtxt('diffsData_' + str(args.traj_thresh) + 'thresh_' + str(
-        #     args.input_window + args.output_window) + 'window.npy')
-        # splineData = np.loadtxt('splineData_' + str(args.traj_thresh) + 'thresh_' + str(
-        #     args.input_window + args.output_window) + 'window.npy')
-
-    socData=[]
-    # if args.social_thresh is not None:
-    #     socData = np.loadtxt('socData_' + str(args.social_thresh) + 'thresh_' + str(args.group_size) + 'group_' + str(
-    #         args.input_window + args.output_window) + 'window.npy')
 
     return trajData, socData, dataPD, data
 
@@ -264,8 +217,15 @@ def custom_clusters(args, diffsData, frames, positions, temp):
 
 
 if __name__=='__main__':
-    args=get_args()
-    diffsData, socData, data = createManifold(args)
+    args = get_args()
+
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    net = SimplestAutoEncoder(args)
+    net.load_state_dict(torch.load('simpleAE.pt'))
+    net.eval()
+    net = net.to(device)
+
+    diffsData, data = createManifold(args, net)
     # diffsData, socData, dataframe, data = loadData(args)
 
     import pandas as pd
@@ -273,13 +233,13 @@ if __name__=='__main__':
     temp=pd.DataFrame()
     temp['tsne_X']=diffsData[:,0]
     temp['tsne_Y'] = diffsData[:, 1]
-    temp['pos'] = data['allDiffs']
+    temp['pos'] = data['pos']
+    temp['latent']=data['latent']
     temp['kmeans'] = kmeans.labels_
-    temp['frames'] = data['posFrames']
-    temp['plotPos']=data['pos']
+    temp['frames'] = data['frames']
     temp['newClusters']=kmeans.labels_#dataframe['newClusters']
     # temp = custom_clusters(args, diffsData, data['posFrames'], data['plotPos'], temp)
-    temp.to_csv('allDiffsData3_' + str(args.traj_thresh) + 'thresh_'+ str(args.input_window + args.output_window) + 'window.csv') #+ str(args.group_size) + 'group_'
+    temp.to_csv('aeData_' + str(args.traj_thresh) + 'thresh_'+ str(args.input_window + args.output_window) + 'window.csv') #+ str(args.group_size) + 'group_'
     # dataframe = custom_clusters(args, dataframe.filter(['tsne_X','tsne_Y']).values, data['posFrames'], data['plotPos'], dataframe)
     # dataframe.to_csv('diffsData_' + str(args.traj_thresh) + 'thresh_' + str(args.input_window + args.output_window) + 'window.csv')
 
@@ -287,10 +247,5 @@ if __name__=='__main__':
     print('Plotting traj data')
     if args.traj_thresh is not None:
         # plotTSNE(diffsData, data['posFrames'], data['plotPos'])
-        plotTSNE(diffsData, data['posFrames'], data['pos'])#, dataframe['newClusters'])
+        plotTSNE(diffsData, data['frames'], data['pos'])#, dataframe['newClusters'])
 
-
-    # breakpoint()
-    print('Plotting social dist data')
-    if args.social_thresh is not None:
-        plotTSNE(socData, data['groupFrames'], data['deltas'])

@@ -11,71 +11,48 @@ from sklearn.manifold import TSNE
 from social_cnn_pytorch.main_scripts.train import CNNTrajNet
 from trajAugmentations import TrajAugs
 from simpleTSNEPredict import SimpleRegNetwork
+from sameSizeData import SameSizeData
 
 CLUSTERS_PER_N = {1:10, 2:20, 3:35, 4:40, 5:40}
 
-class SimplestNet(nn.Module):
-    def __init__(self, args):
-        super(SimplestNet, self).__init__()
-        # self.fc1=nn.Linear((args.input_window+1)*2,32)
-        # self.fc2 = nn.Linear(32, 64)
-        # self.fc3 = nn.Linear(64+32, 32)
-        # self.outfc=nn.Linear(32+32+64, args.output_window*2)
-        self.fc1 = nn.Linear((args.input_window) * 4, 64)
-        self.fc2 = nn.Linear(64, 64)
-        self.fc3 = nn.Linear(64+64, 32)
-        self.outfc=nn.Linear(32+2*64, args.output_window*2)
+class TSNENet(nn.Module):
+    def __init__(self, input_size):
+        super(TSNENet, self).__init__()
+        self.fc1=nn.Linear(input_size,16)
+        self.fc2 = nn.Linear(16, 16)
+        self.fc3 = nn.Linear(16, 8)
+        self.outfc=nn.Linear(8, 2)
         self.relu = nn.LeakyReLU()
 
     def forward(self, x):
         res1=self.relu(self.fc1(x))
         res2=self.relu(self.fc2(res1))
-        res3 = self.relu(self.fc3(torch.cat((res2,res1), dim=-1)))
-        x=self.outfc(torch.cat((res3,res2,res1), dim=-1))
-        return x, torch.cat((res3,res2,res1), dim=-1)
-        # return res1
-
-class SimplestUNet(nn.Module):
-    def __init__(self, args):
-        super(SimplestUNet, self).__init__()
-        self.efc1 = nn.Linear(args.input_window*2, 16)
-        self.efc2 = nn.Linear(16, 8)
-        self.efc3 = nn.Linear(16+8, 2)
-        self.dfc1 = nn.Linear(2, 4)
-        self.dfc2 = nn.Linear(4+8, 16)
-        self.dfc3 = nn.Linear(16+16, args.input_window*2)
-        self.relu = nn.PReLU()
-
-    def forward(self, x):
-        res1 = self.relu(self.efc1(x))
-        res2 = self.relu(self.efc2(res1))
-        latent = self.relu(self.efc3(torch.cat((res2,res1), dim=-1)))
-        res3 = self.relu(self.dfc1(latent))
-        res4 = self.relu(self.dfc2(torch.cat((res3,res2), dim=-1)))
-        x = self.dfc3(torch.cat((res4,res1), dim=-1))
-        return x, latent
+        res3 = self.relu(self.fc3(res2))
+        x=self.outfc(res3)
+        return x
 
 class SimplestAutoEncoder(nn.Module):
     def __init__(self, args):
         super(SimplestAutoEncoder, self).__init__()
-        self.efc1 = nn.Linear(args.input_window*2, 16)
-        self.efc2 = nn.Linear(16, 8)
-        self.efc3 = nn.Linear(16+8, 8)
-        self.dfc1 = nn.Linear(8, 16)
-        self.dfc2 = nn.Linear(16+8, 16)
-        # self.dfc3 = nn.Linear(8+16, args.input_window*2) # for in-->in prediction
-        self.dfc3 = nn.Linear(8 + 16, args.output_window * 2) #for in-->out prediction
-        # self.dfc3 = nn.Linear(8 + 16, 2)
+        # self.efc1 = nn.Linear(args.input_window*2, 16)
+        # self.efc2 = nn.Linear(16, 8)
+        # self.efc3 = nn.Linear(16+8, 8)
+        # self.dfc1 = nn.Linear(8, 16)
+        # self.dfc2 = nn.Linear(16+8, 16)
+        # # self.dfc3 = nn.Linear(8+16, args.input_window*2) # for in-->in prediction
+        # self.dfc3 = nn.Linear(8 + 16, args.output_window * 2) #for in-->out prediction
+        # self.dfc3 = nn.Linear(8 + 16, 2) # for tsne???
 
-        # self.efc1 = nn.Linear(args.input_window * 2, 16)
-        # self.efc2 = nn.Linear(16, 32)
-        # self.efc3 = nn.Linear(16+32, 16)
-        # self.dfc1 = nn.Linear(16, 32)
-        # self.dfc2 = nn.Linear(16+32, 64)
-        # self.dfc3 = nn.Linear(64+16, args.input_window*2)
+        self.efc1 = nn.Linear(args.input_window * 2 * args.traj_thresh, 64)
+        self.efc2 = nn.Linear(64, 32)
+        self.efc3 = nn.Linear(64+32, 16)
+        self.dfc1 = nn.Linear(16, 32)
+        self.dfc2 = nn.Linear(16+32, 64)
+        self.dfc3 = nn.Linear(64+16, args.output_window*2*args.traj_thresh)
         self.relu = nn.LeakyReLU()
 
     def forward(self, x):
+        # breakpoint()
         res1 = self.relu(self.efc1(x))
         res2 = self.relu(self.efc2(res1))
         latent = self.relu(self.efc3(torch.cat((res2,res1), dim=-1)))
@@ -83,38 +60,6 @@ class SimplestAutoEncoder(nn.Module):
         res4 = self.relu(self.dfc2(torch.cat((res3,latent), dim=-1)))
         x = self.dfc3(torch.cat((res4,latent), dim=-1))
         return x, latent
-
-class SimplestConvNet(nn.Module):
-    def __init__(self, args):
-        super(SimplestConvNet, self).__init__()
-        self.conv1 = nn.Conv2d(32, 32, kernel_size=3, padding=1)
-        self.conv2 = nn.Conv2d(32, 32, kernel_size=3, padding=1)
-        self.conv3 = nn.Conv2d(32, 32, kernel_size=3, padding=1)
-        self.conv4 = nn.Conv2d(32, 32, kernel_size=3, padding=1)
-        self.fc1 = nn.Linear(2,32)
-        self.fc2 = nn.Linear(32*8,args.output_window*2)
-        self.relu1 = nn.PReLU()
-        # self.relu2 = nn.PReLU()
-        # self.relu3 = nn.PReLU()
-        # self.relu4 = nn.PReLU()
-        self.bn1 = nn.BatchNorm2d(32)
-        self.bn2 = nn.BatchNorm2d(32)
-        self.bn3 = nn.BatchNorm2d(32)
-        self.bn4 = nn.BatchNorm2d(32)
-
-    def forward(self, x):
-        # breakpoint()
-        x = self.relu1(self.fc1(x))
-        x = torch.transpose(x,-1,0)
-        x = x.unsqueeze(0)
-        x = self.bn1(self.conv1(x))
-        x = self.bn2(self.conv2(x))
-        x = self.bn3(self.conv3(x))
-        x = self.bn4(self.conv4(x))
-        x = x.squeeze()
-        x = torch.transpose(x, -1, 0)
-        x = self.fc2(x.reshape(-1, x.shape[1]*x.shape[2]))
-        return x
 
 class SimplestVAE(nn.Module):
     def __init__(self, args):  # , device):
@@ -161,20 +106,14 @@ def get_args():
     parser.add_argument('--output_window', default=12, type=int, help='number of frames for the output data')
     parser.add_argument('--batch_size', default=1, type=int)
     parser.add_argument('--epochs', default=20, type=int)
-    parser.add_argument('--maxN', default=5, type=int)
+    parser.add_argument('--maxN', default=3, type=int)
     parser.add_argument('--lr', default=1e-2, type=float)
     parser.add_argument('--train', action='store_true')
-
-    # CNNTraj parameters
-    parser.add_argument('--input_size', default=8, type=int, help='number of frames for the input data')
-    parser.add_argument('--output_size', default=12, type=int, help='number of frames for the output data')
-    parser.add_argument('--embedding_size', default=32, type=int, help='size of the embedding')
-    parser.add_argument('--dropout_rate', default=0.06, type=float)
-
+    parser.add_argument('--traj_thresh', default=2, type=int)
     args = parser.parse_args()
     return args
 
-def train(args, net, device, tsne_nets):
+def train(args, net, device, tsne_net, learned_tsne):
     min_loss = np.inf
     trajAugs = TrajAugs()
     opt = torch.optim.Adam(net.parameters(), lr=args.lr)
@@ -183,38 +122,35 @@ def train(args, net, device, tsne_nets):
     for e in tqdm(range(args.epochs)):
         avgLoss=[]
         for name in ['ETH', 'ETH_Hotel', 'UCY_Zara1', 'UCY_Zara2']:
-            dataset = PlainTrajData(name, input_window=args.input_window, output_window=args.output_window, maxN=args.maxN)
+            dataset = SameSizeData(name, input_window=args.input_window, output_window=args.output_window,
+                               trajThresh=args.traj_thresh)
             loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False)
             for data in loader:
                 if data['pos'].nelement()>0:
                     # breakpoint()
-                    scene = torch.tensor(trajAugs.augment(data['pos'][0].numpy()))
-                    # diffs = torch.tensor(np.diff(scene, axis=1))
-                    # vels = torch.cat((torch.zeros(scene.shape[0],1,2),diffs[:,:args.input_window-1,:]),axis=1)
-                    # input_scene = torch.cat((scene[:,:args.input_window,:],vels),axis=-1)
+                    scene = trajAugs.augment(data['pos'][0].numpy())
                     with torch.no_grad():
-                        try:
-                            tsne_net = tsne_nets[scene.shape[0] - 1]
-                        except:
-                            continue
                         tsne = tsne_net(data['diffs'][0][:, :(args.input_window - 1), :].flatten().float())
-                    input_scene = torch.cat((scene[:, :args.input_window, :], torch.ones(scene.shape[0],args.input_window,2)*nn.functional.normalize(tsne.unsqueeze(0))), axis = -1)
-                    output, latent = net(input_scene.reshape(-1, (args.input_window) * 4).float().to(device))
+                    # breakpoint()
+                    output, latent = net(scene[:, :args.input_window, :].reshape(-1, (args.input_window) * 2 * args.traj_thresh).float().to(device))
+                    pred_tsne=learned_tsne(latent)
                     opt.zero_grad()
-                    loss = loss_func(output, scene[:, args.input_window:, :].reshape(-1,args.output_window*2).float().to(device))
+                    loss1 = loss_func(output, scene[:, args.input_window:, :].reshape(-1, (args.output_window) * 2 * args.traj_thresh).float().to(device))
+                    loss2 = loss_func(pred_tsne,tsne.unsqueeze(0))
+                    loss=loss1+loss2
                     loss.backward()
                     opt.step()
                     scheduler.step()
                     avgLoss.append(loss.item())
         print("Epoch",e,': Loss =',np.mean(avgLoss))
         if np.mean(avgLoss)<min_loss:
-            # for i in range(1, args.maxN + 1):
-            #     torch.save('simpleRegNet_noNorm_diffsData_' + str(i) + 'people_' + str(args.input_window) + 'window.pt')
-            torch.save(net.state_dict(),'simpleNetTSNE.pt')
+            torch.save(net.state_dict(),'simpleAE_'+str(args.traj_thresh)+'.pt')
+            torch.save(learned_tsne.state_dict(), 'learned_tsne_'+str(args.traj_thresh)+'.pt')
             min_loss=np.mean(avgLoss)
-    return net
+    return net, learned_tsne
 
-def test(args, net, device, tsne_nets):
+@torch.no_grad()
+def test(args, net, device, learned_tsne):
     net.eval()
     loss_func = nn.MSELoss() #nn.BCELoss() #
     avgLoss=[]
@@ -222,24 +158,18 @@ def test(args, net, device, tsne_nets):
     inputs = []
     latents = []
     for name in ['ETH', 'ETH_Hotel', 'UCY_Zara1', 'UCY_Zara2']:
-        dataset = PlainTrajData(name, input_window=args.input_window, output_window=args.output_window, maxN=args.maxN, split='test')
+        dataset = SameSizeData(name, input_window=args.input_window, output_window=args.output_window,
+                               trajThresh=args.traj_thresh)
         loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False)
         for data in loader:
-            if data['pos'].nelement() > 0:
+            if data['pos'].nelement() > 0 and data['pos'].shape[1] == args.traj_thresh:
                 # breakpoint()
-                with torch.no_grad():
-                    scene = data['pos'][0]
-                    # diffs = torch.tensor(np.diff(scene, axis=1))
-                    # vels = torch.cat((torch.zeros(scene.shape[0], 1, 2), diffs[:, :args.input_window - 1, :]), axis=1)
-                    # input_scene = torch.cat((scene[:, :args.input_window, :], vels), axis=-1)
-                    try:
-                        tsne_net = tsne_nets[scene.shape[0] - 1]
-                    except:
-                        continue
-                    tsne = tsne_net(data['diffs'][0][:, :(args.input_window - 1), :].flatten().float())
-                    input_scene = torch.cat((scene[:, :args.input_window, :], torch.ones(scene.shape[0], args.input_window, 2) * nn.functional.normalize(tsne.unsqueeze(0))),axis=-1)  #
-                    output, latent = net(input_scene.reshape(-1, (args.input_window) * 4).float().to(device))
-                loss = loss_func(output,scene[:, args.input_window:, :].reshape(-1, args.output_window * 2).float().to(device))
+                scene = data['pos'][0]
+                output, latent = net(scene[:, :args.input_window, :].reshape(-1, (args.input_window) * 2 * args.traj_thresh).float().to(device))
+                pred_tsne = learned_tsne(latent)
+                loss1 = loss_func(output,scene[:, args.input_window:, :].reshape(-1, (args.input_window) * 2 * args.traj_thresh).float().to(device))
+                loss2 = loss_func(pred_tsne, tsne.unsqueeze(0))
+                loss = loss1 + loss2
                 avgLoss.append(loss.item())
                 preds.append(output.numpy())
                 inputs.append(data['pos'][0].float())
@@ -269,37 +199,23 @@ def graph(args, inputs, predictions=None, name=None):
 if __name__=='__main__':
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     args = get_args()
-    # net = SimplestAutoEncoder(args).to(device)
-    # net = SimplestUNet(args)
-    net = SimplestNet(args).to(device)
-    # net = SimplestConvNet(args)
-    # net = SimplestVAE(args)
-    # net = CNNTrajNet(args)
+    net = SimplestAutoEncoder(args).to(device)
+    learned_tsne=TSNENet(16)
 
-    tsne_nets = []
-    N = np.array(range(1, args.maxN + 1))
+    tsne_net= SimpleRegNetwork(args.traj_thresh*(args.input_window-1)*2)
+    tsne_net.load_state_dict(torch.load('simpleRegNet_diffsData_' + str(args.traj_thresh) + 'people_' + str(args.input_window)+'window.pt'))
+    tsne_net=tsne_net.eval()
 
     if args.train:
-        for i in N:
-            temp = SimpleRegNetwork(i * (args.input_window - 1) * 2)  # .eval()
-            temp.load_state_dict(torch.load(
-                '/Users/faith_johnson/GitRepos/PedTrajPred/weights/simpleRegNet_noNorm_diffsData_' + str(
-                    i) + 'people_' + str(
-                    args.input_window) + 'window.pt'))
-            tsne_nets.append(temp.to(device))  # .eval()
+        # net.load_state_dict(torch.load('simpleAE_'+str(args.traj_thresh)+'.pt'))
+        net, learned_tsne = train(args, net.to(device), device, tsne_net, learned_tsne)
 
-        # net.load_state_dict(torch.load('simpleAutoEnc_output.pt'))
-        net = train(args, net.to(device), device, tsne_nets)
-
-    net.load_state_dict(torch.load('simpleNetTSNE.pt'))
+    net.load_state_dict(torch.load('simpleAE_'+str(args.traj_thresh)+'.pt'))
+    learned_tsne.load_state_dict(torch.load('learned_tsne.pt'))
     net.eval()
     net = net.to(device)
-    for i in N:
-        temp = SimpleRegNetwork(i * (args.input_window - 1) * 2).eval()
-        temp.load_state_dict(torch.load('/Users/faith_johnson/GitRepos/PedTrajPred/weights/simpleRegNet_noNorm_diffsData_' + str(i) + 'people_' + str(args.input_window) + 'window.pt'))
-        tsne_nets.append(temp.eval())
 
-    preds, inputs, latents = test(args, net, device, tsne_nets)
+    preds, inputs, latents = test(args, net, device, learned_tsne)
     # breakpoint()
     if len(latents)>0:
         tsne=TSNE()

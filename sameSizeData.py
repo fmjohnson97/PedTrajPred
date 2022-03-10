@@ -104,7 +104,7 @@ class SameSizeData(Dataset):
                     data = self.collateRemainders(data)
                 if len(data['pos'])==0 and len(data['deltas'])==0:
                     data['frames']=np.array([])
-                else:
+                if len(data['pos'])>0:
                     data = self.newDiffs(data)
             else:
                 data = self.reset(data,['deltas', 'groupIDs', 'distTraj', 'diffs', 'spline'])
@@ -187,12 +187,13 @@ class SameSizeData(Dataset):
 
     def newDiffs(self, data):
         allDiffs=[]
+        scale = 10
         for i,x in enumerate(data['pos']):
             temp = np.concatenate((data['pos'][:i], data['pos'][i + 1:]), axis=0)
             if len(temp)>0:
                 temp = x[1:] - temp[:, :-1, :]
                 # breakpoint()
-                allDiffs.append(np.concatenate((np.diff(x, axis=0).reshape(1,7,2), temp), axis=0))
+                allDiffs.append(np.concatenate((np.diff(x, axis=0).reshape(1,7,2)*scale, temp), axis=0))
             else:
                 allDiffs.append(np.diff(x, axis=0))
         data['allDiffs'] = np.stack(allDiffs)
