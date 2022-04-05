@@ -13,7 +13,13 @@ from collections import defaultdict
 from sklearn.manifold import TSNE
 
 
-CLUSTERS_PER_N = {1:5, 2:13, 3:24}
+# CLUSTERS_PER_N = {1:5, 2:13, 3:24} #diffsData8, diffsData16
+# CLUSTERS_PER_N = {1:6, 2:19, 3:24} #allDiffs8, allDiffs16
+CLUSTERS_PER_N = {1:6, 2:19, 3:24} # allDiffs8Closest,
+
+# CLUSTERS_PER_N = {1:14, 2:18, 3:22} diffsVel
+# CLUSTERS_PER_N = {1:11, 2:18, 3:24} diffsVelAng
+# CLUSTERS_PER_N = {1:16, 2:18, 3:24} angAllDiffs
 CLUSTER_NUM=[0,5,13,24]
 
 class SimplestNet(nn.Module):
@@ -197,10 +203,10 @@ def train(args, net, device, N, cluster_num):
         if e%10==0:
             print("Epoch",e,': Loss =',np.mean(avgLoss))
         if np.mean(avgLoss)<min_loss:
-            torch.save(net.state_dict(),'simpleNetTSNE_'+str(N)+'_cluster'+str(cluster_num)+'.pt')
+            torch.save(net.state_dict(),'simpleNetTSNE_allDiffsClosest_'+str(N)+'_cluster'+str(cluster_num)+'.pt')
             min_loss=np.mean(avgLoss)
-        if np.mean(avgLoss)<4.8e-4:
-            torch.save(net.state_dict(),'simpleNetTSNE_'+str(N)+'_cluster'+str(cluster_num)+'.pt')
+        if np.mean(avgLoss)<4.0e-4:
+            torch.save(net.state_dict(),'simpleNetTSNE_allDiffsClosest_'+str(N)+'_cluster'+str(cluster_num)+'.pt')
             print("Epoch",e,': Loss =',np.mean(avgLoss))
             break
     return net
@@ -294,7 +300,7 @@ if __name__=='__main__':
                 print('People:', n, 'Cluster:', c)
                 net = SimplestNet(args).to(device)
                 try:
-                    net.load_state_dict(torch.load('simpleNetTSNE_'+str(n)+'_cluster'+str(c)+'.pt', map_location=device))
+                    net.load_state_dict(torch.load('simpleNetTSNE_allDiffsClosest_'+str(n)+'_cluster'+str(c)+'.pt', map_location=device))
                 except:
                     pass
                 net = train(args, net, device, n, c)
@@ -315,7 +321,7 @@ if __name__=='__main__':
             print('People:',n,'Cluster:',c)
             net = SimplestNet(args).to(device)
             try:
-                net.load_state_dict(torch.load('simpleNetTSNE_'+str(n)+'_cluster'+str(c)+'.pt', map_location=device))
+                net.load_state_dict(torch.load('simpleNetTSNE_allDiffsClosest_'+str(n)+'_cluster'+str(c)+'.pt', map_location=device))
                 net.eval()
                 preds, inputs, latents, loss = test(args, net, device, n, c)
                 test_loss.extend(loss)

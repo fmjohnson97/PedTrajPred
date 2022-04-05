@@ -14,9 +14,9 @@ def plotTSNE(data, original, color):
         npoints=4#int(input("How many points will you click?"))
         fig = plt.figure()
         plt.scatter(data[:, 0], data[:, 1], c=color, alpha=0.5)
+        plt.title('TSNE Embedding for N=2 Trajectories')
         plt.waitforbuttonpress()
         points_clicked = plt.ginput(npoints, show_clicks=True)
-        plt.title('TSNE Embedding for N=3 Trajectories')
         plt.show()
 
         points=[]
@@ -96,7 +96,7 @@ def makeTSNELabel(maxN, input_window):
     max_label = 0
     for i in range(1,maxN+1):
         # breakpoint()
-        data = pd.read_csv('diffsData_'+str(i)+'thresh_'+str(input_window)+'window.csv')
+        data = pd.read_csv('allDiffsData_'+str(i)+'thresh_'+str(input_window)+'window.csv')
         temp = data.filter(['tsne_X', 'tsne_Y', 'newClusters'])
         class_bounds =[]
         for b in range(int(temp['newClusters'].max())+1):
@@ -117,7 +117,7 @@ def makeTSNELabel(maxN, input_window):
 
 #[0,5,13,24]
 # makeTSNELabel(3, 8)
-df=pd.read_csv('/Users/faith_johnson/GitRepos/PedTrajPred/allDiffsData3_3thresh_8window.csv')#, index_col=0)
+df=pd.read_csv('/Users/faith_johnson/GitRepos/PedTrajPred/allDiffsData_3thresh_8window.csv')#, index_col=0)
 # for i in range(24):
 #     plt.scatter(df['tsne_X'], df['tsne_Y'], c='r')
 #     temp = df[(df['newClusters']==i)]
@@ -129,7 +129,7 @@ df=pd.read_csv('/Users/faith_johnson/GitRepos/PedTrajPred/allDiffsData3_3thresh_
 # plt.scatter(df['tsne_X'],df['tsne_Y'],c=df['newClusters'])
 # plt.figure()
 # plt.scatter(df['tsne_X'],df['tsne_Y'],c=kmeans.labels_)
-# plt.title('TSNE Embedding for N=3 Trajectories')
+# plt.title('TSNE Embedding for N=2 Trajectories')
 # plt.show()
 #
 # new=np.ones(len(df))*-1

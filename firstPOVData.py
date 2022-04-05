@@ -11,9 +11,8 @@ import random
 from TrajNet.trajnetplusplusbaselines.trajnetbaselines.lstm.utils import center_scene
 from itertools import combinations
 
-class SameSizeData(Dataset):
-    def __init__(self, dataset, mode='by_frame', image=False, input_window=8, output_window=12, group_size=2,
-                 distThresh=0.01, trajThresh=None, socialThresh=None):
+class FirstPOVData(Dataset):
+    def __init__(self, dataset, image=False, input_window=8, output_window=12, trajThresh=1):
         '''
             dataset: selects which data paths to use from below
             mode: either chooses the trajectories "by_frame" or "by_human"
@@ -43,15 +42,11 @@ class SameSizeData(Dataset):
             'UCY_Zara2': ['datasets/UCY/zara02/H.txt', 'datasets/UCY/zara02/video.avi',
                           'datasets/UCY/zara02/annotation.vsp', (18, 17), (-2, -2)]}
 
-        self.mode = mode
         self.image = image
         self.transforms = Compose([GaussianBlur(5)])
         self.input_window = input_window
         self.output_window = output_window
-        self.group_size=group_size
-        self.dist_thresh=distThresh
         self.traj_thresh=trajThresh
-        self.social_thresh=socialThresh
         self.max_group_size=22 # at seq len = 8 (so input=8, output=0); actually by dataset its [22, 15, 18, 17]
 
         try:
@@ -73,41 +68,27 @@ class SameSizeData(Dataset):
             print('WARNING: MASKS/IMAGES ARE NOT CURRENTLY SUPPORTED FOR THIS DATASET:', dataset)
             self.dataset = load_crowds(self.root + paths[2], use_kalman=False, homog_file=self.root + paths[0])
 
-        if self.mode == 'by_human':
-            self.trajectory = self.dataset.get_trajectories()
-            self.groups = self.trajectory.indices
 
     def __len__(self):
-        if self.mode=='by_human':
-            return len(self.groups)
-        elif self.mode =='by_frame':
-            return self.dataset.data['frame_id'].nunique()-self.output_window-self.input_window
+        return self.dataset.data['frame_id'].nunique()-self.output_window-self.input_window
 
     def __getitem__(self, item):
-        if self.mode == 'by_human':
-            data = self.getOneHumanTraj(item)
-        elif self.mode=='by_frame':
-            data = self.getFrames(item,self.output_window+self.input_window)
-            #turns the dict into an array if not filter
-            #or if filter, it gets rid of people not present in the entire sequence of frames
-            data = self.filterLength(data)
-            if len(data['pos'])>1:
-                # breakpoint()
-                data = self.getSocialDistances(data)
-                data = self.getDistTrajs(data)
-                data = self.parameterize(data)
-                if self.social_thresh is not None:
-                    # trims down # of social groups returned
-                    data = self.trimSocialGroups(data)
-                if self.traj_thresh is not None:
-                    # trims down # of raw trajectory based groups returned
-                    data = self.collateRemainders(data)
-                if len(data['pos'])==0 and len(data['deltas'])==0:
-                    data['frames']=np.array([])
-                if len(data['pos'])>0:
-                    data = self.newDiffs(data)
+        data = self.getFrames(item,self.output_window+self.input_window)
+        #turns the dict into an array if not filter
+        #or if filter, it gets rid of people not present in the entire sequence of frames
+        data = self.filterLength(data)
+        if len(data['pos'])>=self.traj_thresh:
+            # breakpoint()
+            data = self.getDistTrajs(data)
+            # data = self.parameterize(data)
+            data = self.newDiffs(data)
+            # trims down # of raw trajectory based groups returned
+            if len(data['pos']) > self.traj_thresh:
+                data = self.collateRemainders(data)
             else:
-                data = self.reset(data,['deltas', 'groupIDs', 'distTraj', 'diffs', 'spline'])
+                data['diffsFrames']=data['frames']
+        else:
+            data = self.reset(data,['allDiffs', 'angDiffs'])
 
         if self.image:
             data['frames']=self.getImages(data)
@@ -115,58 +96,48 @@ class SameSizeData(Dataset):
         return data
 
     def collateRemainders(self, data):
-        if len(data['pos'])> self.traj_thresh:
-            # randomly choose self.traj_thresh trajectories from the total in the scene
-            temp=[(i,data['pos'][i]) for i in range(len(data['pos']))]
-            choices=random.sample(temp, k=self.traj_thresh)
-            ids=[data['peopleIDs'][x[0]] for x in choices]
-            diffs=[data['diffs'][x[0]] for x in choices]
-            spline = [data['spline'][x[0]] for x in choices]
-            pos=[x[1] for x in choices]
-            data['peopleIDs']=np.array(ids)
-            data['pos']=np.array(pos)
-            data['diffs']=np.array(diffs)
-            data['spline']=np.array(spline)
-            # data['pos']=np.array(list(combinations(data['pos'],self.traj_thresh)))
-            # data['peopleIDs']=np.array(list(combinations(data['peopleIDs'], self.traj_thresh)))
-        elif len(data['pos'])< self.traj_thresh:
-            data['pos']=np.array([])
-            data['peopleIDs']=np.array([])
-            data['diffs'] = np.array([])
-            data['spline']=np.array([])
-            data['allDiffs'] = np.array([])
-
-        return data
-
-    def trimSocialGroups(self, data):
-        if len(data['deltas'])<self.social_thresh:
-            data['deltas']=np.array([])
-            data['groupIDs']=np.array([])
-        elif len(data['deltas'])>self.social_thresh:
-            # breakpoint()
-            # randomly choose self.social_thresh groupings from the total in the scene
-            temp = [(i, data['deltas'][i]) for i in range(len(data['deltas']))]
-            choices = random.sample(temp, k=self.social_thresh)
-            ids = [data['groupIDs'][x[0]] for x in choices]
-            pos = [x[1] for x in choices]
-            data['groupIDs'] = np.array(ids)
-            data['deltas'] = np.array(pos)
-            # data['plotPos']=np.array([data['pos'][x-1] for x in ids])
-            # data['deltas'] = np.array(list(combinations(data['deltas'], self.social_thresh)))
-            # data['groupIDs'] = np.array(list(combinations(data['groupIDs'], self.social_thresh)))
-        temp=[]
-        conversion = {}
-        for i, p in enumerate(data['peopleIDs']):
-            conversion[p] = i
-        for id in data['groupIDs']:
-            inds=[conversion[i] for i in id]
-            temp.append(data['pos'][inds])
         # breakpoint()
-        if len(temp)>0:
-            data['plotPos']=np.stack(temp)
-        else:
-            data['plotPos']=np.array([])
+        # get traj_thresh nearest neighbors for each person and use that as 1 sample
+        newDiffs=[]
+        gtPos = []
+        gtFrames = []
+        for i in range(len(data['allDiffs'])):
+            dists = data['pos'][i]-data['pos']
+            minDists = np.sum(np.sum(dists**2, axis=-1), axis=-1)
+            if self.traj_thresh == 1:
+                # breakpoint()
+                minDists[i]=np.inf
+                closest=np.argmin(minDists)
+            elif data['pos'].shape[0]==self.traj_thresh+1:
+                # breakpoint()
+                closest = [j for j in range(self.traj_thresh+1) if j!=i]
+            else:
+                idx = np.argpartition(minDists, self.traj_thresh+1)
+                closest=[ind for ind in idx[:self.traj_thresh+1] if ind!=i]
+            newDiffs.append(data['allDiffs'][i][closest])
+            gtPos.append(data['pos'][closest])
+            gtFrames.extend([data['frames']]*len(data['allDiffs']))
+        # breakpoint()
+        data['allDiffs'] = np.stack(newDiffs)
+        data['diffsPos'] = np.stack(gtPos)
+        data['diffsFrames'] = np.stack(gtFrames)
+
+        # # randomly choose self.traj_thresh trajectories from the total in the scene
+        # temp=[(i,data['pos'][i]) for i in range(len(data['pos']))]
+        # choices=random.sample(temp, k=self.traj_thresh)
+        # ids=[data['peopleIDs'][x[0]] for x in choices]
+        # diffs=[data['diffs'][x[0]] for x in choices]
+        # pos=[x[1] for x in choices]
+        # data['peopleIDs']=np.array(ids)
+        # data['pos']=np.array(pos)
+        # data['diffs']=np.array(diffs)
+
+        # # get all combinations of people
+        # data['pos']=np.array(list(combinations(data['pos'],self.traj_thresh)))
+        # data['peopleIDs']=np.array(list(combinations(data['peopleIDs'], self.traj_thresh)))
+
         return data
+
 
     def reset(self, data, keys=None):
         for k in data.keys():
@@ -186,7 +157,9 @@ class SameSizeData(Dataset):
         return data
 
     def newDiffs(self, data):
+        # breakpoint()
         allDiffs=[]
+        headingDiffs=[]
         scale = 15
         for i,x in enumerate(data['pos']):
             temp = np.concatenate((data['pos'][:i], data['pos'][i + 1:]), axis=0)
@@ -195,14 +168,17 @@ class SameSizeData(Dataset):
             if len(temp)>0:
                 temp = x[1:] - temp[:, :-1, :]
                 # breakpoint()
-                allDiffs.append(np.hstack(np.concatenate((np.diff(x, axis=0).reshape(1, -1,2)*scale, temp), axis=0)))
-                # temp = np.concatenate((np.diff(x, axis=0).reshape(1,7,2)*scale, temp), axis=0)
-                # allDiffs.append(np.concatenate((x.reshape(1,8,2)[:,:-1,:],np.diff(x, axis=0).reshape(1,7,2)*scale, heading.reshape(1,7,1)), axis=-1))
+                allDiffs.append(np.concatenate((np.diff(x, axis=0).reshape(1,-1,2)*scale, temp), axis=0))
             else:
                 # breakpoint()
                 allDiffs.append(np.diff(x, axis=0))
-                # allDiffs.append(np.concatenate((x.reshape(1,8,2)[:,:-1,:],np.diff(x, axis=0).reshape(1,7,2)*scale, heading.reshape(1,7,1)), axis=-1))
+                # allDiffs.append(np.concatenate((x.reshape(1,-1,2)[:,:-1,:],np.diff(x, axis=0).reshape(1,-1,2)*scale, heading.reshape(1,-1,1)), axis=-1))
+            headingDiffs.append(np.concatenate((np.diff(x, axis=0).reshape(1, -1, 2)*scale, heading.reshape(1, -1, 1)), axis=-1))
+
+        # breakpoint()
         data['allDiffs'] = np.stack(allDiffs)
+        data['angDiffs'] = np.stack(headingDiffs)
+        data['diffsPos']=data['pos']
         return data
 
     def getImages(self,data):
@@ -225,28 +201,6 @@ class SameSizeData(Dataset):
             frames.append(f)
         return frames
 
-    def getSocialDistances(self, data):
-        ''' So Far, going with avg distance over the trajectory needs to be below a threshold '''
-        people = data['peopleIDs']
-        conversion={}
-        for i, p in enumerate(people):
-            conversion[p]=i
-        potential_groups=list(combinations(people, 2)) # get distance between every combo of 2 people
-        diffs = [data['pos'][conversion[x[0]]] - data['pos'][conversion[x[1]]] for x in potential_groups]
-        if self.group_size >2:
-            # went with average distance between each pair in the group
-            groups=list(combinations(people, self.group_size))
-            subgroups=[list(combinations(x,2)) for x in groups]
-            inds = [[potential_groups.index(x) for x in y] for y in subgroups]
-            diffs = np.array([np.sum(np.array(diffs)[x], axis=0) for x in inds])/3.0
-        else:
-            groups=potential_groups
-
-        thresh = [np.mean(np.sum(x ** 2, axis=-1)) for x in diffs]
-        diffs=np.array(diffs)[np.array(thresh)<=self.dist_thresh]
-        data['deltas']=diffs
-        data['groupIDs']=np.array(groups)[np.array(thresh)<=self.dist_thresh]
-        return data
 
     def filterLength(self, data):
         peopleIDs, posDict, frames = data['peopleIDs'], data['pos'], data['frames']
@@ -268,14 +222,6 @@ class SameSizeData(Dataset):
         else:
             data=self.reset(data)
         return data
-
-    def getOneHumanTraj(self,item):
-        dataset={}
-        group=list(self.groups.keys())[item]
-        data=self.trajectory.get_group(group)
-        dataset['frames']=data['frame_id'].tolist()
-        dataset['pos'] = data.filter(['pos_x', 'pos_y']).to_numpy()
-        return dataset
 
     def getFrames(self, item, frameNumber):
         #breakpoint()
@@ -304,7 +250,7 @@ class SameSizeData(Dataset):
 
 
 if __name__=='__main__':
-    x = SameSizeData(dataset='ETH_Hotel', output_window=0, group_size=3, socialThresh=3, trajThresh=3)
+    x = FirstPOVData(dataset='ETH_Hotel', output_window=0, trajThresh=3)
     d=DataLoader(x,batch_size=1,shuffle=False)
     # data=x.__getitem__(1) #78 gets none
     # # import pdb; pdb.set_trace()
@@ -324,11 +270,9 @@ if __name__=='__main__':
     #     cv2.imshow('',f.numpy())
     #     cv2.waitKey(1000)
     for name in ['ETH', 'ETH_Hotel', 'UCY_Zara1', 'UCY_Zara2']:
-        x = SameSizeData(dataset=name, output_window=0, group_size=2, socialThresh=3, trajThresh=3)
+        x = FirstPOVData(dataset=name, output_window=0, trajThresh=3)
         d = DataLoader(x, batch_size=1, shuffle=False)
         for p in d:
             print(p['pos'].shape)
-            print(p['deltas'].shape)
-            breakpoint()
 
     breakpoint()

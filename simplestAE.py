@@ -8,7 +8,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 import random
 from sklearn.manifold import TSNE
-from social_cnn_pytorch.main_scripts.train import CNNTrajNet
+#from social_cnn_pytorch.main_scripts.train import CNNTrajNet
 from trajAugmentations import TrajAugs
 from simpleTSNEPredict import SimpleRegNetwork
 from sameSizeData import SameSizeData
@@ -20,15 +20,15 @@ class TSNENet(nn.Module):
         super(TSNENet, self).__init__()
         self.fc1=nn.Linear(input_size,16)
         self.fc2 = nn.Linear(16, 16)
-        self.fc3 = nn.Linear(16, 8)
-        self.outfc=nn.Linear(8, 2)
+        self.fc3 = nn.Linear(16+16, 8)
+        self.outfc=nn.Linear(8+16+16, 2)
         self.relu = nn.LeakyReLU()
 
     def forward(self, x):
-        res1=self.relu(self.fc1(x))
-        res2=self.relu(self.fc2(res1))
-        res3 = self.relu(self.fc3(res2))
-        x=self.outfc(res3)
+        res1 = self.relu(self.fc1(x))
+        res2 = self.relu(self.fc2(res1))
+        res3 = self.relu(self.fc3(torch.cat((res2, res1), dim=-1)))
+        x = self.outfc(torch.cat((res3, res2, res1), dim=-1))
         return x
 
 class SimplestAutoEncoder(nn.Module):
@@ -127,10 +127,10 @@ def train(args, net, device, tsne_net, learned_tsne):
             loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False)
             for data in loader:
                 if data['pos'].nelement()>0:
-                    # breakpoint()
+                    #breakpoint()
                     scene = trajAugs.augment(data['pos'][0].numpy())
                     with torch.no_grad():
-                        tsne = tsne_net(data['diffs'][0][:, :(args.input_window - 1), :].flatten().float())
+                        tsne = tsne_net(data['diffs'][0][:, :(args.input_window - 1), :].flatten().float().to(device))
                     # breakpoint()
                     output, latent = net(scene[:, :args.input_window, :].reshape(-1, (args.input_window) * 2 * args.traj_thresh).float().to(device))
                     pred_tsne=learned_tsne(latent)
@@ -150,13 +150,14 @@ def train(args, net, device, tsne_net, learned_tsne):
     return net, learned_tsne
 
 @torch.no_grad()
-def test(args, net, device, learned_tsne):
+def test(args, net, device, tsne_net, learned_tsne):
     net.eval()
     loss_func = nn.MSELoss() #nn.BCELoss() #
     avgLoss=[]
     preds = []
     inputs = []
     latents = []
+    tsne_track=[]
     for name in ['ETH', 'ETH_Hotel', 'UCY_Zara1', 'UCY_Zara2']:
         dataset = SameSizeData(name, input_window=args.input_window, output_window=args.output_window,
                                trajThresh=args.traj_thresh)
@@ -165,17 +166,19 @@ def test(args, net, device, learned_tsne):
             if data['pos'].nelement() > 0 and data['pos'].shape[1] == args.traj_thresh:
                 # breakpoint()
                 scene = data['pos'][0]
+                tsne = tsne_net(data['diffs'][0][:, :(args.input_window - 1), :].flatten().float().to(device))
                 output, latent = net(scene[:, :args.input_window, :].reshape(-1, (args.input_window) * 2 * args.traj_thresh).float().to(device))
                 pred_tsne = learned_tsne(latent)
-                loss1 = loss_func(output,scene[:, args.input_window:, :].reshape(-1, (args.input_window) * 2 * args.traj_thresh).float().to(device))
+                loss1 = loss_func(output,scene[:, args.input_window:, :].reshape(-1, (args.output_window) * 2 * args.traj_thresh).float().to(device))
                 loss2 = loss_func(pred_tsne, tsne.unsqueeze(0))
                 loss = loss1 + loss2
                 avgLoss.append(loss.item())
-                preds.append(output.numpy())
+                preds.append(output.cpu().numpy())
                 inputs.append(data['pos'][0].float())
-                latents.extend(latent.numpy())
+                latents.extend(latent.cpu().numpy())
+                tsne_track.append([pred_tsne.squeeze().numpy(), tsne.numpy()])
     print('Avg Test Loss =',np.mean(avgLoss))
-    return preds, inputs, latents
+    return preds, inputs, latents, tsne_track
 
 def graph(args, inputs, predictions=None, name=None):
     plt.figure()
@@ -200,22 +203,22 @@ if __name__=='__main__':
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     args = get_args()
     net = SimplestAutoEncoder(args).to(device)
-    learned_tsne=TSNENet(16)
+    learned_tsne=TSNENet(16).to(device)
 
     tsne_net= SimpleRegNetwork(args.traj_thresh*(args.input_window-1)*2)
-    tsne_net.load_state_dict(torch.load('simpleRegNet_diffsData_' + str(args.traj_thresh) + 'people_' + str(args.input_window)+'window.pt'))
-    tsne_net=tsne_net.eval()
+    tsne_net.load_state_dict(torch.load('simpleRegNet_diffsData_' + str(args.traj_thresh) + 'people_' + str(args.input_window)+'window.pt',map_location=torch.device('cpu')))
+    tsne_net=tsne_net.eval().to(device)
 
     if args.train:
         # net.load_state_dict(torch.load('simpleAE_'+str(args.traj_thresh)+'.pt'))
-        net, learned_tsne = train(args, net.to(device), device, tsne_net, learned_tsne)
+        net, learned_tsne = train(args, net, device, tsne_net, learned_tsne)
 
-    net.load_state_dict(torch.load('simpleAE_'+str(args.traj_thresh)+'.pt'))
-    learned_tsne.load_state_dict(torch.load('learned_tsne.pt'))
+    net.load_state_dict(torch.load('simpleAE_'+str(args.traj_thresh)+'.pt',map_location=torch.device('cpu')))
+    learned_tsne.load_state_dict(torch.load('learned_tsne_'+str(args.traj_thresh)+'.pt',map_location=torch.device('cpu')))
     net.eval()
-    net = net.to(device)
+    #net = net.to(device)
 
-    preds, inputs, latents = test(args, net, device, learned_tsne)
+    preds, inputs, latents, tsne_track = test(args, net, device, tsne_net, learned_tsne)
     # breakpoint()
     if len(latents)>0:
         tsne=TSNE()
@@ -224,5 +227,11 @@ if __name__=='__main__':
 
     for i in range(10):
         graph(args, inputs, preds, name='Inputs vs Predictions')
+
+    # breakpoint()
+    tsne_track=np.stack(tsne_track)
+    plt.scatter(tsne_track[:,0,0],tsne_track[:,0,1], c='tab:orange')
+    plt.scatter(tsne_track[:, 1, 0], tsne_track[:, 1, 1], c='b')
+    plt.title('TSNE Predictions')
 
     plt.show()

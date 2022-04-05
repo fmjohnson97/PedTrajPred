@@ -38,6 +38,7 @@ class TSNEGT(Dataset):
                 originalPos = [x.strip().split(' ') for x in originalPos]
                 originalPos = np.hstack(originalPos)
                 originalPos = [float(x.strip()) for x in originalPos if len(x.strip()) > 0]
+                newClusters=kmeans
             except:
                 tsneX, tsneY, pos, kmeans, frames = self.data.iloc[item].tolist()
                 originalPos = []

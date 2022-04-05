@@ -8,6 +8,8 @@ from tqdm import tqdm
 import numpy as np
 from matplotlib import pyplot as plt
 from collections import defaultdict
+import pandas as pd
+from PIL import Image
 
 MASTER_COLOR_LIST=[[[255,0,0], [255,143,0], [110,7,7], [125,70,0]],
                    [[255,151,0], [243,255,0], [92,55,0], [98,103,0]],
@@ -21,21 +23,61 @@ def get_args():
     parser.add_argument('--input_window', default=8, type=int, help='number of frames for the input data')
     parser.add_argument('--output_window', default=0, type=int, help='number of frames for the output data')
     parser.add_argument('--batch_size', default=1, type=int)
-    parser.add_argument('--xgrid_num', default=10, type=int)
-    parser.add_argument('--ygrid_num', default=10, type=int)
-    parser.add_argument('--maxN', default=5, type=int)
-    parser.add_argument('--social_thresh', default=0.2, type=float)#0.9 for trajData
+    parser.add_argument('--xgrid_num', default=24, type=int)
+    parser.add_argument('--ygrid_num', default=32, type=int)
+    parser.add_argument('--maxN', default=3, type=int)
+    parser.add_argument('--social_thresh', default=0.9, type=float)#0.9 for trajData
     args = parser.parse_args()
     return args
 
+def makeTSNELabel(maxN, input_window):
+    # global GT_TSNE_VALUES
+    global TSNE_N_CUTOFFS
+    global TSNE_BOUNDS
+    # GT_TSNE_VALUES = pd.DataFrame(columns=['tsne_X','tsne_Y','kmeans'])
+    TSNE_N_CUTOFFS = {}
+    TSNE_BOUNDS = {}
+    max_label = 0
+    for i in range(1,maxN+1):
+        # breakpoint()
+        data = pd.read_csv('allDiffsData_'+str(i)+'thresh_'+str(input_window)+'window.csv')
+        temp = data.filter(['tsne_X', 'tsne_Y', 'newClusters'])
+        class_bounds =[]
+        for b in range(int(temp['newClusters'].max())+1):
+            bounds=temp[temp['newClusters']==b]
+            coords = np.array([[bounds['tsne_X'].max(),bounds['tsne_Y'].max()],[bounds['tsne_X'].min(),bounds['tsne_Y'].min()]])
+            sum_x = np.sum(coords[:, 0])
+            sum_y = np.sum(coords[:, 1])
+            class_bounds.append([sum_x / 2, sum_y / 2])
+
+        # TSNE_BOUNDS[i]=[[temp['tsne_X'].max(),temp['tsne_Y'].max()],[temp['tsne_X'].min(),temp['tsne_Y'].min()]]
+        TSNE_BOUNDS[i]=class_bounds
+        temp['newClusters']=temp['newClusters']+max_label
+        # GT_TSNE_VALUES = GT_TSNE_VALUES.append(temp)
+        max_label = temp['newClusters'].max()+1
+        temp = temp['newClusters'].unique()
+        temp.sort()
+        TSNE_N_CUTOFFS[i] = temp
+
+
+def get_spaced_colors(n):
+    max_value = 16581375  # 255**3
+    interval = int(max_value / n)
+    colors = [hex(I)[2:].zfill(6) for I in range(0, max_value, interval)]
+    return [(int(i[:2], 16), int(i[2:4], 16), int(i[4:], 16)) for i in colors]
+
+def get_spaced_inds(n, max_value, row_len):
+    interval = int(max_value / n)
+    inds = [I for I in range(0, max_value, interval)]
+    return [[i//row_len,i%row_len] for i in inds]
 
 def makeColorGrid(min_coords, max_coords, args):
     temp = np.flip(max_coords - min_coords)
-    # breakpoint()
+    global TSNE_CLUSTER_COLORS
+    TSNE_CLUSTER_COLORS = {}
     colors=[]
     from scipy.ndimage.interpolation import zoom
     im=np.array([[[255,0,0],[255,127,0],[255,255,0],[0,255,0],[0,0,255],[127,0,255],[255,0,255]], [[80,0,0],[80,40,0],[80,80,0],[0,80,0],[0,0,80],[40,0,80],[80,0,80]]]).astype(np.uint8)
-    factor=args.maxN // 2 + 1
     zoomed = zoom(im, ((temp[0] // 2 + 1), int((temp[1]) * (args.maxN + 1) // 7), 1), order=1)
     inds=[range(x,x+int(temp[1]+1)) for x in range(0,zoomed.shape[1],int(temp[1]+1+temp[1]//args.maxN))]
     colors=[zoomed[:,i,:] for i in inds]
@@ -48,6 +90,37 @@ def makeColorGrid(min_coords, max_coords, args):
     #     plt.figure()
     #     plt.imshow(zoomed, interpolation='nearest')
     # plt.show()
+
+    #Solution 2
+    temp = get_spaced_colors(sum([len(x) for x in TSNE_BOUNDS.values()]) + 1)
+    temp.pop(0)
+    random.shuffle(temp)
+
+    for i in range(args.maxN):
+        # Solution 1
+        # temp=[]
+        # for center in TSNE_BOUNDS[i+1]:
+        #     # breakpoint()
+        #     temp.append(colors[i][int(center[0])][int(center[1])])
+        # TSNE_CLUSTER_COLORS[i+1]=temp
+
+        #Solution 2
+        TSNE_CLUSTER_COLORS[i + 1] = [np.array(t) for t in temp[:len(TSNE_N_CUTOFFS[i + 1])]]
+        for j in range(len(TSNE_N_CUTOFFS[i + 1])):
+            temp.pop(0)
+
+        #Solution 3
+        # randx=random.sample(list(range(colors[i].shape[0])),k=len(TSNE_N_CUTOFFS[i + 1]))
+        # randy = random.sample(list(range(colors[i].shape[1])), k=len(TSNE_N_CUTOFFS[i + 1]))
+        # TSNE_CLUSTER_COLORS[i + 1] = np.vsplit(colors[i][randx,randy],len(randx))
+
+        #Solution 4
+        # temp = []
+        # inds = get_spaced_inds(len(TSNE_N_CUTOFFS[i + 1]),colors[i].shape[0]*colors[i].shape[1],colors[i].shape[1])
+        # for j in inds:
+        #     temp.append(colors[i][j[0],j[1]])
+        # TSNE_CLUSTER_COLORS[i+1]=temp
+        # breakpoint()
     return colors
 
 
@@ -59,8 +132,8 @@ def getGridFill(pos, xgrid, ygrid, color, args):
     yinds = []
     for p in pos:
         for point in p:
-            xdifs=[point[0]-x for x in xgrid]
-            ydifs=[point[1]-y for y in ygrid]
+            xdifs=[point[1]-x for x in xgrid]
+            ydifs=[point[0]-y for y in ygrid]
             try:
                 xinds.append(np.where(np.diff(np.sign(xdifs))!=0)[0][-1])
                 yinds.append(np.where(np.diff(np.sign(ydifs))!=0)[0][-1])
@@ -72,47 +145,90 @@ def getGridFill(pos, xgrid, ygrid, color, args):
         vals[i[0],i[1]]=[1,1,1]*color
     return vals
 
-def getNewGroups(pos, args):
+def getNewGroups(pos, diffs, args):
     # hard coding grid to be 3:4 (rows:columns) since that's aspect ratio of the images
 
     groupDict=defaultdict(int)
+    # breakpoint()
     for i,p in enumerate(pos): # blue, orange, green, red, purple, brown
         dists = torch.sum(torch.sum((pos-p)**2,axis=-1)**.5, axis=-1)
+        # print(dists)
+        # breakpoint()
         inds=np.where(dists<args.social_thresh)
         for ind in inds:
             if len(ind)<=args.maxN:
                 groupDict[tuple(ind)]+=1
+        # minDists = dists #np.sum(np.sum(dists ** 2, axis=-1), axis=-1)
+        # if minDists.shape[0] == args.maxN:
+        #     # breakpoint()
+        #     closest = [j for j in range(args.maxN)]
+        # else:
+        #     idx = np.argpartition(minDists, args.maxN)
+        #     closest = [ind.item() for ind in idx[:args.maxN]]
+        #     closest.sort()
+        # groupDict[tuple(closest)]+=1
 
     groups=list(groupDict.keys())
     if len(groups)<1:
-        totals = np.array(list(range(pos.shape[0])))
-        inds = [list(range(x,x+args.maxN)) for x in range(len(totals)-args.maxN)]
-        for i in inds:
-            groups.append(totals[i])
+        for i, p in enumerate(pos):
+            minDists = dists  # np.sum(np.sum(dists ** 2, axis=-1), axis=-1)
+            if minDists.shape[0] == args.maxN:
+                # breakpoint()
+                closest = [j for j in range(args.maxN)]
+            else:
+                idx = np.argpartition(minDists, args.maxN)
+                closest = [ind.item() for ind in idx[:args.maxN]]
+                closest.sort()
+            groupDict[tuple(closest)]+=1
 
+    groups = list(groupDict.keys())
+
+    # breakpoint()
     remove=[]
     for i,g in enumerate(groups):
         if sum([all([x in temp for x in g]) for temp in groups])>1:
             remove.append(i)
 
+    # breakpoint()
     remove.reverse()
     for r in remove:
         groups.pop(r)
     if len(groups)<1:
         breakpoint()
+
     new_pos=[]
+    new_diffs=[]
+    new_allDiffs=[]
     for g in groups:
         new_pos.append(pos[np.array(list(g))])
+        new_diffs.append(diffs[np.array(list(g))])
+        allDiffs = []
+        for i in range(new_pos[-1].shape[0]):
+            temp = np.concatenate((new_pos[-1][:i], new_pos[-1][i + 1:]), axis=0)
+            # hold = np.sum(new_pos[-1] ** 2, axis=1)
+            # heading = np.arccos(np.sum(x[:-1, :] * x[1:, :], axis=1) / (hold[:-1] * hold[1:]) ** .5)
+            if len(temp) > 0:
+                temp = new_pos[-1][i][1:] - temp[:, :-1, :]
+                # breakpoint()
+                allDiffs.append(
+                    np.hstack(np.concatenate((np.diff(new_pos[-1][i], axis=0).reshape(1, -1, 2) * 15, temp), axis=0)))
+            else:
+                # breakpoint()
+                allDiffs.append(np.diff(new_pos[-1][i], axis=0))
+        new_allDiffs.append(torch.tensor(np.stack(allDiffs)).flatten())
 
-    return new_pos, groups
+    # breakpoint()
+    return new_pos, new_allDiffs, new_diffs, groups
+
 
 if __name__ == '__main__':
     args = get_args()
+    makeTSNELabel(args.maxN, args.input_window)
     nets=[]
     N=np.array(range(1,args.maxN+1))
     for i in N:
-        net = SimpleRegNetwork(i * (args.input_window-1) * 2).eval()
-        net.load_state_dict(torch.load('/Users/faith_johnson/GitRepos/PedTrajPred/weights/simpleRegNet_diffsData_'+str(i)+'people_'+str(args.input_window)+'window.pt'))
+        net = SimpleRegNetwork(i*i * (args.input_window-1) * 2).eval()
+        net.load_state_dict(torch.load('/Users/faith_johnson/GitRepos/PedTrajPred/simpleRegNet_allDiffsData_'+str(i)+'people_'+str(args.input_window)+'window.pt'))
         nets.append(net)
 
     tsne_preds=[]
@@ -130,9 +246,25 @@ if __name__ == '__main__':
         for data in tqdm(loader):
             if data['pos'].nelement() > 0:
                 # breakpoint()
-                if data['diffs'].shape[-3]<6:
+                if data['diffs'].shape[-3]<args.maxN:
+                    # breakpoint()
                     net=nets[data['diffs'].shape[-3]-1]
-                    pos = data['diffs'].flatten().float()
+                    pos = data['pos'][0].float()#.flatten()
+                    allDiffs = []
+                    for i in range(pos.shape[0]):
+                        # breakpoint()
+                        temp = np.concatenate((pos[:i], pos[i + 1:]), axis=0)
+                        # hold = np.sum(new_pos[-1] ** 2, axis=1)
+                        # heading = np.arccos(np.sum(x[:-1, :] * x[1:, :], axis=1) / (hold[:-1] * hold[1:]) ** .5)
+                        if len(temp) > 0:
+                            temp = pos[i][1:] - temp[:, -1, :]
+                            # breakpoint() #.reshape(1, -1, 2)
+                            allDiffs.append(np.concatenate((np.diff(pos[i], axis=0) * 15, temp),axis=-1))
+                        else:
+                            # breakpoint()
+                            allDiffs.append(np.diff(pos[i], axis=0))
+                    # breakpoint()
+                    pos = torch.tensor(np.stack(allDiffs)).flatten()
                     people_per_frame.append(data['diffs'].shape[-3])
                     with torch.no_grad():
                         output = net(pos)
@@ -145,16 +277,16 @@ if __name__ == '__main__':
                     #     plt.scatter(p[0][0], p[0][1])
                     # plt.show()
                     # breakpoint()
-                    pos, groups = getNewGroups(data['diffs'][0], args)
+                    pos,allDiffs, diffs, groups = getNewGroups(data['pos'][0], data['diffs'][0], args)
                     people=[]
                     preds=[]
                     ins=[]
-                    for i, p in enumerate(pos):
-                        net = nets[p.shape[-3]-1]
-                        people.append(p.shape[-3])
+                    for i, p in enumerate(allDiffs):
+                        net = nets[pos[i].shape[-3]-1]
+                        people.append(pos[i].shape[-3])
                         with torch.no_grad():
-                            output = net(p.flatten().float())
                             # breakpoint()
+                            output = net(p.flatten().float())
                             ins.append(data['pos'][0][np.array(list(groups[i]))])
                             preds.append(output.detach())
                     output = np.max(np.stack(preds), axis=0)
@@ -186,17 +318,20 @@ if __name__ == '__main__':
         fig1.suptitle('Legend for Graph Colors')
         for i in range(args.maxN):
             ax = plt.subplot((args.maxN+1)//2,2,i+1)
-            ax.imshow(colors[i])
+            df = pd.read_csv('/Users/faith_johnson/GitRepos/PedTrajPred/allDiffsData_'+str(i+1)+'thresh_'+str(args.input_window)+'window.csv')  # , index_col=0)
+            tsneColor=[TSNE_CLUSTER_COLORS[i+1][np.argmin(np.sum((TSNE_BOUNDS[i+1]-point)**2,axis=-1))] for point in df.filter(['tsne_X','tsne_Y']).values]
+            ax.scatter(df['tsne_X'].values,df['tsne_Y'].values,c=np.array(tsneColor)/255)
             ax.set_title(str(i+1)+' People')
             ax.set_xticks([])
             ax.set_yticks([])
 
         print('plotting heatmap')
         fig2 = plt.figure()
-        ax1 = fig2.add_subplot(111)
-        fig3 = plt.figure()
-        ax2 = fig3.add_subplot(111)
-        # ax2.axis([0, 1, 0, 1])#min_plot_coord[0], max_plot_coord[0], min_plot_coord[1], max_plot_coord[1]])
+        ax1 = fig2.add_subplot(121)
+        ax1.axis([0, args.xgrid_num, 0, args.ygrid_num])
+        ax2 = fig2.add_subplot(122)
+        ax2.axis([0, 1, 0, 1])#min_plot_coord[0], max_plot_coord[0], min_plot_coord[1], max_plot_coord[1]])
+        maps=[]
         for i, tpred in tqdm(enumerate(tsne_preds)):
             vals=[]
             ax2.clear()
@@ -206,7 +341,8 @@ if __name__ == '__main__':
                 if type(n) is list:
                     n=n[j]
                     pos = pos[j]
-                color=colors[n-1][int(t[0]),int(t[1])]
+                # breakpoint()
+                color=TSNE_CLUSTER_COLORS[n][np.argmin(np.sum((TSNE_BOUNDS[n]-t.numpy())**2,axis=-1))]#colors[n-1][int(t[0]),int(t[1])]
                 vals.append(getGridFill(pos.reshape(n,args.input_window,2), grids_plotX, grids_plotY, color, args))
                 # breakpoint()
                 ax2.set_title(name + ' pedestrian social patterns')
@@ -215,16 +351,63 @@ if __name__ == '__main__':
                     # ax2.plot(p, c=[color/255]*p.shape[0])
                     ax2.scatter(p[1:,0],p[1:,1], c=[color/255])
                     ax2.scatter(p[0, 0], p[0, 1], c=[color / 255], marker='x')
-                # plt.pause(0.15)
+                plt.pause(0.15)
             if len(tpred)>1:
                 # breakpoint()
                 vals=np.sum(vals, axis=0)
             else:
                 vals=vals[0]
+
+            maps.append([vals,[n,np.argmin(np.sum((TSNE_BOUNDS[n]-t.numpy())**2,axis=-1))]])
             ax1.clear()
             ax1.set_title(name + ' pedestrian social patterns')
-            ax1.imshow(vals.astype(np.uint8), interpolation='nearest')
-            plt.pause(0.3)
+            ax1.imshow(vals.astype(np.uint8), interpolation='nearest', origin='lower')
+            plt.pause(0.15)
+
+        background=Image.open(name+'.png')
+        plt.figure()
+        plt.imshow(background, origin='lower')
+        plotm = [m[0] for m in maps]
+        avg = np.mean(np.sum(plotm, axis=0) // len(plotm), axis=-1)
+        avg = avg / avg.max() * 255
+        im = Image.fromarray(avg)
+        im = im.resize((640, 480))
+        plt.imshow(im.rotate(-90), origin='lower', alpha=.7)
+        plt.title('Environment Occupancy Map for ' + name)
+        plt.savefig(name+'_heatmap.png')
+        plt.show()
+        # breakpoint()
+        for i in range(1,args.maxN+1):
+            plt.figure()
+            plt.imshow(background, origin='lower')
+            m=[m for m in maps if m[1][0]==i]
+            plotm=[m[0] for m in m]
+            avg=np.mean(np.sum(plotm,axis=0)//len(plotm),axis=-1)
+            avg=avg/avg.max()*255
+            im = Image.fromarray(avg)
+            im = im.resize((640, 480))
+            plt.imshow(im.rotate(-90), origin='lower', alpha=.7)
+            plt.title('Environment Occupancy Map for N='+str(i))
+            plt.savefig('n'+str(i)+'_heatmap.png')
+            for j in range(len(TSNE_N_CUTOFFS[i])):
+                # breakpoint()
+                plotm=[m[0] for m in m if m[1][1]==j]
+                if len(plotm)>0:
+                    plt.figure()
+                    plt.imshow(background, origin='lower')
+                    # breakpoint()
+                    # avg = np.sum(plotm, axis=0) #/ len(plotm)
+                    # color_map=(avg/avg.max())*TSNE_CLUSTER_COLORS[i][j]
+                    # breakpoint()
+                    color_map=np.mean(np.sum(plotm,axis=0)//len(plotm),axis=-1)
+                    color_map=color_map/color_map.max()*255
+                    im = Image.fromarray(color_map)
+                    im = im.resize((640, 480))
+                    plt.imshow(im.rotate(-90), origin='lower', alpha=.7)
+                    plt.title('Environment Occupancy Map for N=' + str(i)+', Cluster='+str(j))
+                    plt.savefig('n'+str(i)+'_c'+str(j)+'_heatmap.png')
+            # plt.show()
+            # breakpoint()
 
 
 
