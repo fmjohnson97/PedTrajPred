@@ -10,12 +10,13 @@ from simpleTSNEPredict import SimpleRegNetwork
 
 class TSNEClusterGT(Dataset):
     def __init__(self, N, cluster_num, split='train'):
-        self.data=pd.read_csv('ETH_UCY_GT_allDiffsDataClosest.csv')
+        self.data=pd.read_csv('ETH_UCY_GT_allDiffsData.csv')
         # self.data=pd.read_csv('just_Zara1_GT.csv')
         #'tsne_X', 'tsne_Y', 'N', 'cluster', 'pos'
+        # breakpoint()
         self.data = self.data.iloc[(self.data['N'] == N).values]
         self.data = self.data.iloc[(self.data['cluster']==cluster_num).values]
-        self.cluster_size=[0,5,13,24]
+        self.cluster_size=[0,10,29,33]
         self.N=N
         self.cluster_num=cluster_num
         if split=='train':
@@ -96,7 +97,7 @@ def makeTSNELabel(maxN, input_window):
     max_label = 0
     for i in range(1,maxN+1):
         # breakpoint()
-        data = pd.read_csv('allDiffsClosest_'+str(i)+'thresh_'+str(input_window)+'window.csv')
+        data = pd.read_csv('allDiffsData_'+str(i)+'thresh_'+str(input_window)+'window.csv')
         temp = data.filter(['tsne_X', 'tsne_Y', 'newClusters'])
         class_bounds =[]
         for b in range(int(temp['newClusters'].max())+1):
@@ -122,12 +123,12 @@ def getClusterGT(input_window, maxN):
     for i in N:
         temp = SimpleRegNetwork(i*i * (input_window - 1) * 2)  # .eval()
         temp.load_state_dict(torch.load(
-            '/Users/faith_johnson/GitRepos/PedTrajPred/simpleRegNet_allDiffsClosest_' +
+            '/Users/faith_johnson/GitRepos/PedTrajPred/simpleRegNet_allDiffsData_' +
             str(i) + 'people_' + str(input_window) + 'window.pt'))
         temp.eval()
         tsne_nets.append(temp.to(device))
 
-    CLUSTER_NUM = [0,6,19,24]
+    CLUSTER_NUM = [0,10,29,33]
     temp=[]
     preds=[[],[],[]]
     for name in ['UCY_Zara2','UCY_Zara1','ETH_Hotel','ETH']:
@@ -152,11 +153,11 @@ def getClusterGT(input_window, maxN):
                         tsne = tsne_net(diffs[:, :(input_window - 1), :].flatten().float())
                         preds[s.shape[0]-1].append(tsne.numpy())
                         bound_coords = np.array(TSNE_BOUNDS[s.shape[0]])
-                        tsne_class = np.argmin(np.sum((tsne.numpy() - bound_coords) ** 2, axis=-1)) + sum(CLUSTER_NUM[:s.shape[0]])
+                        tsne_class = np.argmin(np.sum((tsne.numpy() - bound_coords) ** 2, axis=-1))# + sum(CLUSTER_NUM[:s.shape[0]])
                     temp.append([tsne.numpy()[0],tsne.numpy()[1],s.shape[0],tsne_class.item(),s.flatten(), name])
     # breakpoint()
     frame = pd.DataFrame(temp,columns=['tsne_X', 'tsne_Y', 'N', 'cluster', 'pos', 'dataset'], dtype=float)
-    frame.to_csv('ETH_UCY_GT_allDiffsDataClosest.csv')
+    frame.to_csv('ETH_UCY_GT_allDiffsData.csv')
     from matplotlib import pyplot as plt
     # breakpoint()
     for i in range(len(preds)):

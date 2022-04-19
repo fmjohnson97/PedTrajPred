@@ -219,6 +219,7 @@ class PlainTrajData(Dataset):
             else:
                 self.video.set(1, i)  # 1 is for CV_CAP_PROP_POS_FRAMES
                 ret, f = self.video.read()
+                f = cv2.cvtColor(f, cv2.COLOR_BGR2RGB)
             frames.append(f)
         return frames
 

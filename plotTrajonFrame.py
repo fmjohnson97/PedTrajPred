@@ -9,13 +9,8 @@ import numpy as np
 from matplotlib import pyplot as plt
 from collections import defaultdict
 import pandas as pd
+from trajAugmentations import TrajAugs
 from PIL import Image
-
-MASTER_COLOR_LIST=[[[255,0,0], [255,143,0], [110,7,7], [125,70,0]],
-                   [[255,151,0], [243,255,0], [92,55,0], [98,103,0]],
-                   [[255,255,0], [71,255,0], [88,88,0], [17,60,0]],
-                   [[0,255,91], [0,247,255], [0,55,20], [0,42,43]],
-                   [[0,84,255], [130,0,255], [0,28,85], [32,0,62]]]
 
 def get_args():
     parser = argparse.ArgumentParser()
@@ -234,6 +229,7 @@ if __name__ == '__main__':
     tsne_preds=[]
     inputs=[]
     people_per_frame=[]
+    frames=[]
     # colorMap=['maroon','r','tab:orange','y','lime','g','b','indigo','tab:purple','m']
 
     for name in ['ETH', 'ETH_Hotel', 'UCY_Zara1', 'UCY_Zara2']:
@@ -241,8 +237,6 @@ if __name__ == '__main__':
         loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False)
         print("Processing",name)
         tsne_preds=[]
-        max_tsne=[-np.inf, -np.inf]
-        min_tsne=[np.inf, np.inf]
         for data in tqdm(loader):
             if data['pos'].nelement() > 0:
                 # breakpoint()
@@ -271,6 +265,7 @@ if __name__ == '__main__':
                         tsne_preds.append([output.detach()])
                         inputs.append(data['pos'].flatten())
                     output=output.detach()
+                    frames.append(data['frames'])
                 else:
                     # for p in data['diffs'][0]:
                     #     plt.plot(p[:, 0], p[:, 1])
@@ -281,6 +276,7 @@ if __name__ == '__main__':
                     people=[]
                     preds=[]
                     ins=[]
+                    temp_frame=[]
                     for i, p in enumerate(allDiffs):
                         net = nets[pos[i].shape[-3]-1]
                         people.append(pos[i].shape[-3])
@@ -289,135 +285,36 @@ if __name__ == '__main__':
                             output = net(p.flatten().float())
                             ins.append(data['pos'][0][np.array(list(groups[i]))])
                             preds.append(output.detach())
+                            temp_frame.append(data['frames'])
                     output = np.max(np.stack(preds), axis=0)
                     tsne_preds.append(preds)
                     inputs.append(ins)
                     people_per_frame.append(people)
+                    frames.append(temp_frame)
 
-                if output[0] > max_tsne[0]:
-                    max_tsne[0] = output[0]
-                if output[1] > max_tsne[1]:
-                    max_tsne[1] = output[1]
-                if output[0] < min_tsne[0]:
-                    min_tsne[0] = output[0]
-                if output[1] < min_tsne[1]:
-                    min_tsne[1] = output[1]
 
-        max_plot_coord = [1,1]#dataset.max
-        min_plot_coord = [0,0]#dataset.min
-        grids_plotX=np.linspace(min_plot_coord[0],max_plot_coord[0], args.xgrid_num)
-        grids_plotY = np.linspace(min_plot_coord[1], max_plot_coord[1], args.ygrid_num)
-        # grids_tsneX = np.linspace(min_tsne[0], max_tsne[0], args.num_grids)
-        # grids_tsneY = np.linspace(min_tsne[1], max_tsne[1], args.num_grids)
-        print('Computing grids')
-        colors=makeColorGrid(np.array(min_tsne), np.array(max_tsne), args)
-
-        print('plotting legend')
-        # plot color legend
-        fig1 = plt.figure()
-        fig1.suptitle('Legend for Graph Colors')
-        for i in range(args.maxN):
-            ax = plt.subplot((args.maxN+1)//2,2,i+1)
-            df = pd.read_csv('/Users/faith_johnson/GitRepos/PedTrajPred/allDiffsData_'+str(i+1)+'thresh_'+str(args.input_window)+'window.csv')  # , index_col=0)
-            tsneColor=[TSNE_CLUSTER_COLORS[i+1][np.argmin(np.sum((TSNE_BOUNDS[i+1]-point)**2,axis=-1))] for point in df.filter(['tsne_X','tsne_Y']).values]
-            ax.scatter(df['tsne_X'].values,df['tsne_Y'].values,c=np.array(tsneColor)/255)
-            ax.set_title(str(i+1)+' People')
-            ax.set_xticks([])
-            ax.set_yticks([])
-
-        print('plotting heatmap')
-        fig2 = plt.figure()
-        ax1 = fig2.add_subplot(121)
-        ax1.axis([0, args.xgrid_num, 0, args.ygrid_num])
-        ax2 = fig2.add_subplot(122)
-        ax2.axis([0, 1, 0, 1])#min_plot_coord[0], max_plot_coord[0], min_plot_coord[1], max_plot_coord[1]])
-        maps=[]
+        print('Plotting Trajectories')
+        augs=TrajAugs()
         for i, tpred in tqdm(enumerate(tsne_preds)):
             vals=[]
-            ax2.clear()
             for j, t in enumerate(tpred):
                 n=people_per_frame[i]
                 pos = inputs[i]
+                frame = frames[i]
                 if type(n) is list:
                     n=n[j]
                     pos = pos[j]
-                # breakpoint()
-                color=TSNE_CLUSTER_COLORS[n][np.argmin(np.sum((TSNE_BOUNDS[n]-t.numpy())**2,axis=-1))]#colors[n-1][int(t[0]),int(t[1])]
-                vals.append(getGridFill(pos.reshape(n,args.input_window,2), grids_plotX, grids_plotY, color, args))
-                # breakpoint()
-                ax2.set_title(name + ' pedestrian social patterns')
-                ax2.axis([0, 1, 0, 1])
+                    frame=frame[j]
+                breakpoint()
+                dataset = PlainTrajData(frame[0][0], input_window=args.input_window, output_window=args.output_window,maxN=args.maxN)
+                im=dataset.getImages({'frames':torch.stack(frame[1:]).flatten().tolist()})
+                plt.imshow(im[0])
                 for p in pos.reshape(n,args.input_window,2):
-                    # ax2.plot(p, c=[color/255]*p.shape[0])
-                    ax2.scatter(p[1:,0],p[1:,1], c=[color/255])
-                    ax2.scatter(p[0, 0], p[0, 1], c=[color / 255], marker='x')
-                # plt.pause(0.15)
-            if len(tpred)>1:
-                # breakpoint()
-                vals=np.sum(vals, axis=0)
-            else:
-                vals=vals[0]
-
-            maps.append([vals,[n,np.argmin(np.sum((TSNE_BOUNDS[n]-t.numpy())**2,axis=-1))]])
-            # ax1.clear()
-            # ax1.set_title(name + ' pedestrian social patterns')
-            # ax1.imshow(vals.astype(np.uint8), interpolation='nearest', origin='lower')
-            # plt.pause(0.15)
-
+                    p=augs.rotate(p, -90)
+                    plt.plot(p[:,0]*640, p[:,1]*180, c='b')
+                plt.show()
         background=Image.open(name+'.png')
-        plt.figure()
-        plt.imshow(background, origin='lower')
-        plotm = [m[0] for m in maps]
-        avg = np.mean(np.sum(plotm, axis=0) // len(plotm), axis=-1)
-        avg = avg / avg.max() * 255
-        im = Image.fromarray(avg)
-        im = im.resize((640, 480))
-        plt.imshow(im.rotate(-90), origin='lower', alpha=.7)
-        plt.title('Environment Occupancy Map for ' + name)
-        # plt.savefig(name+'_heatmap.png')
         plt.show()
-        # breakpoint()
-        duplicates = [[],[[0,1,13],[6,8,9],[10,12],[22,23],[25,27]],[[4,17]]]
-        for i in range(3,args.maxN+1):
-            plt.figure()
-            plt.imshow(background, origin='lower')
-            m=[m for m in maps if m[1][0]==i]
-            plotm=[m[0] for m in m]
-            avg=np.mean(np.sum(plotm,axis=0)//len(plotm),axis=-1)
-            avg=avg/avg.max()*255
-            im = Image.fromarray(avg)
-            im = im.resize((640, 480))
-            plt.imshow(im.rotate(-90), origin='lower', alpha=.7)
-            plt.title('Environment Occupancy Map for N='+str(i))
-            # plt.savefig('n'+str(i)+'_heatmap.png')
-            skip=[]
-            for j in range(len(TSNE_N_CUTOFFS[i])):
-                if j not in skip:
-                    mergeInd=[k for k,d in enumerate(duplicates[i-1]) if j in d]
-                    if len(mergeInd)>0:
-                        plotm = [m[0] for m in m if m[1][1] in duplicates[i-1][mergeInd[0]]]
-                        skip.extend(duplicates[i-1][mergeInd[0]])
-                        incl=','.join([str(dup) for dup in duplicates[i-1][mergeInd[0]]])
-                        title = 'Environment Occupancy Map for N=' + str(i)+', Cluster=[' + incl+']'
-                    else:
-                        plotm=[m[0] for m in m if m[1][1]==j]
-                        title='Environment Occupancy Map for N=' + str(i)+', Cluster='+str(j)
-                    if len(plotm)>0:
-                        plt.figure()
-                        plt.imshow(background, origin='lower')
-                        # breakpoint()
-                        # avg = np.sum(plotm, axis=0) #/ len(plotm)
-                        # color_map=(avg/avg.max())*TSNE_CLUSTER_COLORS[i][j]
-                        # breakpoint()
-                        color_map=np.mean(np.sum(plotm,axis=0)//len(plotm),axis=-1)
-                        color_map=color_map/color_map.max()*255
-                        im = Image.fromarray(color_map)
-                        im = im.resize((640, 480))
-                        plt.imshow(im.rotate(-90), origin='lower', alpha=.7)
-                        plt.title(title)
-                        # plt.savefig('n'+str(i)+'_c'+str(j)+'_heatmap.png')
-            plt.show()
-            # breakpoint()
 
 
 

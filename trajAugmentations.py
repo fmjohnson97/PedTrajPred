@@ -62,10 +62,13 @@ class TrajAugs():
         traj_copy[-mask_len:] = [[0, 0]] * mask_len
         return traj_copy
 
-    def rotate(self, traj):
+    def rotate(self, traj, angle=None):
         # Rotates by 90, 180, or 270 degrees (to the right?)
         # breakpoint()
-        self.rotDegree=random.randint(0,360)#choice([90, 180, 270])
+        if angle:
+            self.rotDegree=angle
+        else:
+            self.rotDegree=random.randint(0,360)#choice([90, 180, 270])
         theta=np.deg2rad(self.rotDegree)
         # rot=np.array([[np.cos(theta), -np.sin(theta)],[np.sin(theta), np.cos(theta)]])
         # from matplotlib import pyplot as plt

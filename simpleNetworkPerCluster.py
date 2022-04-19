@@ -14,13 +14,15 @@ from sklearn.manifold import TSNE
 
 
 # CLUSTERS_PER_N = {1:5, 2:13, 3:24} #diffsData8, diffsData16
-# CLUSTERS_PER_N = {1:6, 2:19, 3:24} #allDiffs8, allDiffs16
-CLUSTERS_PER_N = {1:6, 2:19, 3:24} # allDiffs8Closest,
+# CLUSTERS_PER_N = {1:6, 2:28, 3:24} #allDiffs8, allDiffs16
+# CLUSTERS_PER_N = {1:6, 2:19, 3:24} # allDiffs8Closest,
+# CLUSTERS_PER_N = {1:6, 2:, 3:} # allDiffs8Long,
+CLUSTERS_PER_N = {1:10, 2:29, 3:33} # allDiffs8Long30 45 60,
 
 # CLUSTERS_PER_N = {1:14, 2:18, 3:22} diffsVel
 # CLUSTERS_PER_N = {1:11, 2:18, 3:24} diffsVelAng
 # CLUSTERS_PER_N = {1:16, 2:18, 3:24} angAllDiffs
-CLUSTER_NUM=[0,5,13,24]
+CLUSTER_NUM=[0,10,29,33]
 
 class SimplestNet(nn.Module):
     def __init__(self, args):
@@ -192,7 +194,7 @@ def train(args, net, device, N, cluster_num):
         for data in loader:
             pos, tsne = data
             pos = pos.reshape(N, args.input_window+args.output_window, 2)
-            pos = trajAugs.augment(pos)
+            # pos = trajAugs.augment(pos)
             output, latent = net(pos[:,:args.input_window,:].reshape(-1, (args.input_window) * 2).float().to(device))
             opt.zero_grad()
             loss = loss_func(output, pos[:, args.input_window:, :].reshape(-1,args.output_window*2).float().to(device))
@@ -203,10 +205,10 @@ def train(args, net, device, N, cluster_num):
         if e%10==0:
             print("Epoch",e,': Loss =',np.mean(avgLoss))
         if np.mean(avgLoss)<min_loss:
-            torch.save(net.state_dict(),'simpleNetTSNE_allDiffsClosest_'+str(N)+'_cluster'+str(cluster_num)+'.pt')
+            torch.save(net.state_dict(),'simpleNetTSNE_allDiffsData_'+str(N)+'_cluster'+str(cluster_num)+'.pt')
             min_loss=np.mean(avgLoss)
-        if np.mean(avgLoss)<4.0e-4:
-            torch.save(net.state_dict(),'simpleNetTSNE_allDiffsClosest_'+str(N)+'_cluster'+str(cluster_num)+'.pt')
+        if np.mean(avgLoss)<3.0e-4:
+            torch.save(net.state_dict(),'simpleNetTSNE_allDiffsData_'+str(N)+'_cluster'+str(cluster_num)+'.pt')
             print("Epoch",e,': Loss =',np.mean(avgLoss))
             break
     return net
@@ -271,6 +273,7 @@ def testAll(args, nets, device, maxN):
 
 def graph(args, inputs, predictions=None, name=None):
     plt.figure()
+    plt.axis([0,1,0,1])
     if predictions is None:
         plt.scatter(inputs[:,0], inputs[:,1])
     else:
@@ -295,12 +298,12 @@ if __name__=='__main__':
     args = get_args()
 
     if args.train:
-        for n in range(1,args.maxN+1):
+        for n in range(2,3):# args.maxN+1):
             for c in range(CLUSTER_NUM[n]):
                 print('People:', n, 'Cluster:', c)
                 net = SimplestNet(args).to(device)
                 try:
-                    net.load_state_dict(torch.load('simpleNetTSNE_allDiffsClosest_'+str(n)+'_cluster'+str(c)+'.pt', map_location=device))
+                    net.load_state_dict(torch.load('simpleNetTSNE_allDiffsData_'+str(n)+'_cluster'+str(c)+'.pt', map_location=device))
                 except:
                     pass
                 net = train(args, net, device, n, c)
@@ -316,12 +319,12 @@ if __name__=='__main__':
                 # plt.show()
 
     test_loss=[]
-    for n in range(2, args.maxN + 1):
+    for n in range(2, 3):#args.maxN + 1):
         for c in range(CLUSTER_NUM[n]):
             print('People:',n,'Cluster:',c)
             net = SimplestNet(args).to(device)
             try:
-                net.load_state_dict(torch.load('simpleNetTSNE_allDiffsClosest_'+str(n)+'_cluster'+str(c)+'.pt', map_location=device))
+                net.load_state_dict(torch.load('simpleNetTSNE_allDiffsData_'+str(n)+'_cluster'+str(c)+'.pt', map_location=device))
                 net.eval()
                 preds, inputs, latents, loss = test(args, net, device, n, c)
                 test_loss.extend(loss)
@@ -330,8 +333,8 @@ if __name__=='__main__':
                     latents = tsne.fit_transform(latents)
                     graph(args, latents, name='Learned Latent Space')
 
-                for i in range(10):
-                    graph(args, inputs, preds, name=str(n)+' People, Cluster '+str(c)+', Inputs vs Predictions')
+                # for i in range(10):
+                #     graph(args, inputs, preds, name=str(n)+' People, Cluster '+str(c)+', Inputs vs Predictions')
 
                 plt.show()
             except Exception as e:

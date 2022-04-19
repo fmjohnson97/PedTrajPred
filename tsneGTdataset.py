@@ -5,19 +5,19 @@ import numpy as np
 from glob import glob
 
 class TSNEGT(Dataset):
-    def __init__(self, path, num_clusters, split='train'):
+    def __init__(self, path, num_clusters=None, split='train'):
         self.data=pd.read_csv(path)
         if 'newClusters' in self.data.columns:
-            print('NewClusters')
+            # print('NewClusters')
             self.data=self.data.filter(['tsne_X','tsne_Y','pos','kmeans','frames','plotPos','newClusters'])
         else:
             self.data=self.data.filter(['tsne_X','tsne_Y','pos','kmeans','frames','plotPos'])
 
         self.num_clusters=num_clusters
-        if split=='train':
-            self.data=self.data.iloc[:int(len(self.data)*.7)]
-        else:
-            self.data = self.data.iloc[int(len(self.data) * .7):]
+        # if split=='train':
+        #     self.data=self.data.iloc[:int(len(self.data)*.7)]
+        # else:
+        #     self.data = self.data.iloc[int(len(self.data) * .7):]
 
     def __len__(self):
         return len(self.data)

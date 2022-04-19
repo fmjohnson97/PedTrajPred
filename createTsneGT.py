@@ -9,8 +9,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 from collections import defaultdict
 import pandas as pd
-from sklearn.decomposition import PCA
-
+from trajAugmentations import TrajAugs
 
 # finds the nearest value in the array of points to the location of the mouse click
 def find_nearest(data, coord):
@@ -20,6 +19,7 @@ def find_nearest(data, coord):
 def get_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--num_clusters', default=10, type=int, help='number of clusters for kmeans')
+    parser.add_argument('--rot', action='store_true')
     parser.add_argument('--input_window', default=8, type=int, help='number of frames for the input data')
     parser.add_argument('--output_window', default=0, type=int, help='number of frames for the output data')
     parser.add_argument('--group_size', default=2, type=int, help='number of people to include in each dist group')
@@ -114,34 +114,39 @@ def createManifold(args):
     data = defaultdict(list)
     print("getting and flattening the data")
     # get the data from each dataset
+    if args.rot:
+        deg_list=[None, 30, 45, 60]#, 180, 270]
+    else:
+        deg_list=[None]
     for name in ['ETH', 'ETH_Hotel', 'UCY_Zara1', 'UCY_Zara2']:
-        dataset = SameSizeData(name, input_window=args.input_window, output_window=args.output_window, group_size=args.group_size,
-                               distThresh=args.dist_thresh,
-                               trajThresh=args.traj_thresh, socialThresh=args.social_thresh)
-        # dataset = FirstPOVData(name, input_window=args.input_window, output_window=args.output_window,
-        #                        trajThresh=args.traj_thresh)
-        for i, d in enumerate(dataset):
-            if len(d['pos']) > 0:
-                # breakpoint()
-                data['pos'].append(d['pos'].flatten())
-                data['diffs'].append(d['diffs'].flatten())
-                data['spline'].append(d['spline'].flatten())
-                data['peopleIDs'].append(d['peopleIDs'])
-                data['posFrames'].append(d['frames'])
-                data['allDiffs'].append(d['allDiffs'].flatten())
-                # data['pos'].extend(d['pos'])
-                # data['diffs'].extend(d['diffs'])
-                # data['allDiffs'].extend(d['allDiffs'])
-                # data['angDiffs'].extend(d['angDiffs'])
-                # data['diffsPos'].extend(d['diffsPos'])
-                # data['diffsFrames'].extend(d['diffsFrames'])
+        for deg in deg_list:
+            dataset = SameSizeData(name, input_window=args.input_window, output_window=args.output_window, group_size=args.group_size,
+                                   distThresh=args.dist_thresh,trajThresh=args.traj_thresh, socialThresh=args.social_thresh,
+                                   rot_degree=deg)
+            # dataset = FirstPOVData(name, input_window=args.input_window, output_window=args.output_window,
+            #                        trajThresh=args.traj_thresh)
+            for i, d in enumerate(dataset):
+                if len(d['pos']) > 0:
+                    # breakpoint()
+                    data['pos'].append(d['pos'].flatten())
+                    data['diffs'].append(d['diffs'].flatten())
+                    data['spline'].append(d['spline'].flatten())
+                    data['peopleIDs'].append(d['peopleIDs'])
+                    data['posFrames'].append(d['frames'])
+                    data['allDiffs'].append(d['allDiffs'].flatten())
+                    # data['pos'].extend(d['pos'])
+                    # data['diffs'].extend(d['diffs'])
+                    # data['allDiffs'].extend(d['allDiffs'])
+                    # data['angDiffs'].extend(d['angDiffs'])
+                    # data['diffsPos'].extend(d['diffsPos'])
+                    # data['diffsFrames'].extend(d['diffsFrames'])
 
-            # if len(d['deltas']) > 0:
-            #     # breakpoint()
-            #     data['deltas'].append(d['deltas'].flatten())
-            #     data['groupIDs'].append(d['groupIDs'])
-            #     data['groupFrames'].append(d['frames'])
-            #     data['plotPos'].append(d['plotPos'].flatten())
+                # if len(d['deltas']) > 0:
+                #     # breakpoint()
+                #     data['deltas'].append(d['deltas'].flatten())
+                #     data['groupIDs'].append(d['groupIDs'])
+                #     data['groupFrames'].append(d['frames'])
+                #     data['plotPos'].append(d['plotPos'].flatten())
 
 
     print('creating the tsne embedding')
@@ -155,6 +160,7 @@ def createManifold(args):
         # distTrajData = tsne.fit_transform(data['distTraj'])
         # np.savetxt('distTrajData_' + str(args.traj_thresh) + 'thresh_' + str(args.input_window + args.output_window) + 'window.npy', distTrajData)
         print(len(data['allDiffs']))
+        # breakpoint()
         diffsData = tsne.fit_transform(np.array(data['allDiffs']).reshape(len(data['allDiffs']),-1))
         # print(len(data['allDiffs']))
         # diffsData = tsne.fit_transform(np.array(data['allDiffs']))
@@ -232,50 +238,51 @@ def centroidnp(arr):
     return sum_x/length, sum_y/length
 
 def custom_clusters(args, diffsData, frames, positions, temp):
-    kmeans = KMeans(n_clusters=24, random_state=0).fit(diffsData)
-    centers = kmeans.cluster_centers_
-
-    fig = plt.figure()
-    plt.scatter(diffsData[:, 0], diffsData[:, 1], alpha=0.5, c=kmeans.labels_)
-    # plt.scatter(centers[:, 0], centers[:, 1], c='r')
-    plt.title(str(args.traj_thresh) + " Traj Data, " + str(args.num_clusters) + " Clusters, Len " + str(
-        args.input_window + args.output_window))
-    plt.show()
-    npoints = 0#int(input("How many clusters will you click?"))
+    # fig = plt.figure()
+    # plt.scatter(diffsData[:, 0], diffsData[:, 1], alpha=0.5)#, c=kmeans.labels_)
+    # plt.title(str(args.traj_thresh) + " Traj Data, " + str(args.num_clusters) + " Clusters, Len " + str(
+    #     args.input_window + args.output_window))
+    # plt.show()
 
     clicks=[]
-    for n in range(npoints):
+    points_clicked=[1,2,3,4]
+    while len(points_clicked)>0:# for n in range(npoints):
         fig = plt.figure()
         plt.scatter(diffsData[:, 0], diffsData[:, 1], alpha=0.5)
-        # plt.scatter(centers[:, 0], centers[:, 1], c='r')
+        if len(clicks)>0:
+            plot=np.array(clicks)
+            plt.scatter(plot[:,:, 0], plot[:,:, 1], c='r')
         plt.title(str(args.traj_thresh) + " Traj Data, " + str(args.num_clusters) + " Clusters, Len " + str(
             args.input_window + args.output_window))
         plt.waitforbuttonpress()
         points_clicked = plt.ginput(4, show_clicks=True)
         plt.show()
-        clicks.append(points_clicked)
+        if len(points_clicked)>0:
+            clicks.append(points_clicked)
 
+    print(len(clicks),'Clusters for N=',args.traj_thresh)
     centroids = []
+    # breakpoint()
     for points in clicks:
         centroids.append(centroidnp(np.array(points)))
     if centroids ==[]:
-        centroids = kmeans.cluster_centers_
-    centroids = np.array(centroids)
+        num_clusters=int(input('How many clusters?'))
+        breakpoint()
+        kmeans = KMeans(n_clusters=num_clusters, random_state=0).fit(diffsData)
+        # centers = kmeans.cluster_centers_
+        temp['newClusters'] = kmeans.labels_
+    else:
+        centroids = np.array(centroids)
+        empty = np.ones(len(diffsData))
+        for i in range(len(diffsData)):
+            empty[i]=np.argmin(np.sum((centroids-diffsData[i])**2, axis=1))
 
-    empty = np.ones(len(diffsData))
-    for i in range(len(diffsData)):
-        empty[i]=np.argmin(np.sum((centroids-diffsData[i])**2, axis=1))
-
-    temp['newClusters'] = kmeans.labels_ #empty #
+        temp['newClusters'] = empty
 
     fig = plt.figure()
-    plt.scatter(diffsData[:, 0], diffsData[:, 1], alpha=0.5)
-    # plt.scatter(centers[:, 0], centers[:, 1], c='r')
     plt.title(str(args.traj_thresh) + " Traj Data, " + str(args.num_clusters) + " Clusters, Len " + str(
         args.input_window + args.output_window))
-
-    fig2 = plt.figure()
-    plt.scatter(diffsData[:,0], diffsData[:,1],c=empty)
+    plt.scatter(diffsData[:,0], diffsData[:,1],c=temp['newClusters'].values)
     plt.show()
 
     return temp
@@ -286,7 +293,6 @@ if __name__=='__main__':
     diffsData, socData, data = createManifold(args)
     # diffsData, socData, dataframe, data = loadData(args)
     # breakpoint()
-    import pandas as pd
     kmeans = KMeans(n_clusters=args.num_clusters, random_state=0).fit(diffsData)
     temp=pd.DataFrame()
     temp['tsne_X']=diffsData[:,0]
@@ -297,7 +303,7 @@ if __name__=='__main__':
     temp['plotPos']=data['pos'] #data['diffsPos']#
     # temp['newClusters']=kmeans.labels_#dataframe['newClusters']
     temp = custom_clusters(args, diffsData, data['posFrames'], temp['plotPos'], temp)
-    temp.to_csv('allDiffsDataTEST3_' + str(args.traj_thresh) + 'thresh_'+ str(args.input_window + args.output_window) + 'window.csv') #+ str(args.group_size) + 'group_'
+    temp.to_csv('allDiffsData_RotAug_' + str(args.traj_thresh) + 'thresh_'+ str(args.input_window + args.output_window) + 'window.csv') #+ str(args.group_size) + 'group_'
     # dataframe = custom_clusters(args, dataframe.filter(['tsne_X','tsne_Y']).values, data['posFrames'], data['plotPos'], dataframe)
     # dataframe.to_csv('diffsData_' + str(args.traj_thresh) + 'thresh_' + str(args.input_window + args.output_window) + 'window.csv')
 

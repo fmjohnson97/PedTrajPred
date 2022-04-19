@@ -10,10 +10,11 @@ import torch
 import random
 from TrajNet.trajnetplusplusbaselines.trajnetbaselines.lstm.utils import center_scene
 from itertools import combinations
+from trajAugmentations import TrajAugs
 
 class SameSizeData(Dataset):
     def __init__(self, dataset, mode='by_frame', image=False, input_window=8, output_window=12, group_size=2,
-                 distThresh=0.01, trajThresh=None, socialThresh=None):
+                 distThresh=0.01, trajThresh=None, socialThresh=None, rot_degree=None):
         '''
             dataset: selects which data paths to use from below
             mode: either chooses the trajectories "by_frame" or "by_human"
@@ -53,6 +54,7 @@ class SameSizeData(Dataset):
         self.traj_thresh=trajThresh
         self.social_thresh=socialThresh
         self.max_group_size=22 # at seq len = 8 (so input=8, output=0); actually by dataset its [22, 15, 18, 17]
+        self.rot_degree = rot_degree
 
         try:
             paths = self.paths[dataset]
@@ -84,6 +86,7 @@ class SameSizeData(Dataset):
             return self.dataset.data['frame_id'].nunique()-self.output_window-self.input_window
 
     def __getitem__(self, item):
+        aug=TrajAugs()
         if self.mode == 'by_human':
             data = self.getOneHumanTraj(item)
         elif self.mode=='by_frame':
@@ -93,13 +96,16 @@ class SameSizeData(Dataset):
             data = self.filterLength(data)
             if len(data['pos'])>1:
                 # breakpoint()
+                if self.rot_degree:
+                    data['pos']=aug.rotate(data['pos'], int(self.rot_degree)).numpy()
+
                 data = self.getSocialDistances(data)
                 data = self.getDistTrajs(data)
                 data = self.parameterize(data)
                 if self.social_thresh is not None:
                     # trims down # of social groups returned
                     data = self.trimSocialGroups(data)
-                if self.traj_thresh is not None:
+                if self.traj_thresh is not None and len(data['pos'])!=self.traj_thresh:
                     # trims down # of raw trajectory based groups returned
                     data = self.collateRemainders(data)
                 if len(data['pos'])==0 and len(data['deltas'])==0:
@@ -112,10 +118,11 @@ class SameSizeData(Dataset):
         if self.image:
             data['frames']=self.getImages(data)
         data['index']=[item]
+        # breakpoint()
         return data
 
     def collateRemainders(self, data):
-        if len(data['pos'])> self.traj_thresh:
+        if len(data['pos'])>= self.traj_thresh:
             # randomly choose self.traj_thresh trajectories from the total in the scene
             temp=[(i,data['pos'][i]) for i in range(len(data['pos']))]
             choices=random.sample(temp, k=self.traj_thresh)
@@ -127,8 +134,27 @@ class SameSizeData(Dataset):
             data['pos']=np.array(pos)
             data['diffs']=np.array(diffs)
             data['spline']=np.array(spline)
+
             # data['pos']=np.array(list(combinations(data['pos'],self.traj_thresh)))
             # data['peopleIDs']=np.array(list(combinations(data['peopleIDs'], self.traj_thresh)))
+
+            # breakpoint()
+            # i=0
+            # dists = data['pos'][i] - data['pos']
+            # minDists = np.sum(np.sum(dists ** 2, axis=-1), axis=-1)
+            # if self.traj_thresh == 1:
+            #     # breakpoint()
+            #     minDists[i] = np.inf
+            #     closest = np.argmin(minDists)
+            # # elif len(data['pos'])>self.traj_thresh:
+            # else:
+            #     idx = np.argpartition(minDists, self.traj_thresh)
+            #     closest = [ind for ind in idx[:self.traj_thresh]]
+            # # breakpoint()
+            # data['pos'] = data['pos'][closest]
+            # if self.traj_thresh==1:
+            #     data['pos']=data['pos'].reshape(1,-1,2)
+
         elif len(data['pos'])< self.traj_thresh:
             data['pos']=np.array([])
             data['peopleIDs']=np.array([])
@@ -190,8 +216,8 @@ class SameSizeData(Dataset):
         scale = 15
         for i,x in enumerate(data['pos']):
             temp = np.concatenate((data['pos'][:i], data['pos'][i + 1:]), axis=0)
-            hold = np.sum(x**2, axis=1)
-            heading = np.arccos(np.sum(x[:-1,:]*x[1:,:], axis=1) / (hold[:-1]*hold[1:])**.5)
+            # hold = np.sum(x**2, axis=1)
+            # heading = np.arccos(np.sum(x[:-1,:]*x[1:,:], axis=1) / (hold[:-1]*hold[1:])**.5)
             if len(temp)>0:
                 temp = x[1:] - temp[:, :-1, :]
                 # breakpoint()

@@ -117,12 +117,8 @@ def makeTSNELabel(maxN, input_window):
 
 #[0,5,13,24]
 # makeTSNELabel(3, 8)
-df=pd.read_csv('/Users/faith_johnson/GitRepos/PedTrajPred/allDiffsData_3thresh_8window.csv')#, index_col=0)
-# for i in range(24):
-#     plt.scatter(df['tsne_X'], df['tsne_Y'], c='r')
-#     temp = df[(df['newClusters']==i)]
-#     plt.scatter(temp['tsne_X'], temp['tsne_Y'], c='b')
-#     plt.show()
+df=pd.read_csv('/Users/faith_johnson/GitRepos/PedTrajPred/allDiffsData_2thresh_8window.csv')#, index_col=0)
+
 
 # kmeans = KMeans(n_clusters=24, random_state=0).fit(df.filter(['tsne_X','tsne_Y']).values)
 # plt.figure()
@@ -131,7 +127,13 @@ df=pd.read_csv('/Users/faith_johnson/GitRepos/PedTrajPred/allDiffsData_3thresh_8
 # plt.scatter(df['tsne_X'],df['tsne_Y'],c=kmeans.labels_)
 # plt.title('TSNE Embedding for N=2 Trajectories')
 # plt.show()
-#
+
+# for i in range(28):
+#     plt.scatter(df['tsne_X'], df['tsne_Y'], c='r')
+#     temp = df[(df['newClusters']==i)]
+#     plt.scatter(temp['tsne_X'], temp['tsne_Y'], c='b')
+#     plt.show()
+
 # new=np.ones(len(df))*-1
 # for i in range(5):
 #     plt.scatter(df['tsne_X'], df['tsne_Y'], c='r')
@@ -150,7 +152,7 @@ for d in df.iloc:
     originalPos = np.hstack(originalPos)
     originalPos = [float(x.strip()) for x in originalPos if len(x.strip()) > 0]
     data[0].append(originalPos)
-    data[1].append(int(kmeans))
+    data[1].append(int(newClusters))
 
 plotTSNE(df.filter(['tsne_X','tsne_Y']).values, np.array(data[0]), np.array(data[1]))
 # plotClusters(df)
