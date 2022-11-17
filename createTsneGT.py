@@ -212,10 +212,10 @@ def loadData(args):
                 # data['plotPos'].append(d['plotPos'].flatten())
 
     if args.traj_thresh is not None:
-        print('Loading','diffsData_' + str(args.traj_thresh) + 'thresh_' + str(args.input_window + args.output_window) + 'window.npy')
+        print('Loading','allDiffsData_RotAug_' + str(args.traj_thresh) + 'thresh_' + str(args.input_window + args.output_window) + 'window.npy')
         trajData = []#np.loadtxt('diffsData_' + str(args.traj_thresh) + 'thresh_' + str(
             # args.input_window + args.output_window) + 'window.npy')
-        dataPD = pd.read_csv('allDiffsData_' + str(args.traj_thresh) + 'thresh_' + str(
+        dataPD = pd.read_csv('allDiffsData_RotAug_' + str(args.traj_thresh) + 'thresh_' + str(
             args.input_window + args.output_window) + 'window.csv')
         # distTrajData = np.loadtxt('distTrajData_' + str(args.traj_thresh) + 'thresh_' + str(
         #     args.input_window + args.output_window) + 'window.npy')
@@ -290,9 +290,9 @@ def custom_clusters(args, diffsData, frames, positions, temp):
 
 if __name__=='__main__':
     args=get_args()
-    diffsData, socData, data = createManifold(args)
-    # diffsData, socData, dataframe, data = loadData(args)
-    # breakpoint()
+    # diffsData, socData, data = createManifold(args)
+    diffsData, socData, dataframe, data = loadData(args)
+    breakpoint()
     kmeans = KMeans(n_clusters=args.num_clusters, random_state=0).fit(diffsData)
     temp=pd.DataFrame()
     temp['tsne_X']=diffsData[:,0]
@@ -302,12 +302,14 @@ if __name__=='__main__':
     temp['frames'] = data['posFrames'] #data['diffsFrames']#
     temp['plotPos']=data['pos'] #data['diffsPos']#
     # temp['newClusters']=kmeans.labels_#dataframe['newClusters']
-    temp = custom_clusters(args, diffsData, data['posFrames'], temp['plotPos'], temp)
-    temp.to_csv('allDiffsData_RotAug_' + str(args.traj_thresh) + 'thresh_'+ str(args.input_window + args.output_window) + 'window.csv') #+ str(args.group_size) + 'group_'
+
+    # temp = custom_clusters(args, diffsData, data['posFrames'], temp['plotPos'], temp)
+    # temp.to_csv('perplexity_allDiffsData_RotAug_' + str(args.traj_thresh) + 'thresh_'+ str(args.input_window + args.output_window) + 'window.csv') #+ str(args.group_size) + 'group_'
+
     # dataframe = custom_clusters(args, dataframe.filter(['tsne_X','tsne_Y']).values, data['posFrames'], data['plotPos'], dataframe)
     # dataframe.to_csv('diffsData_' + str(args.traj_thresh) + 'thresh_' + str(args.input_window + args.output_window) + 'window.csv')
 
-    breakpoint()
+    # breakpoint()
     print('Plotting traj data')
     if args.traj_thresh is not None:
         # plotTSNE(diffsData, data['posFrames'], data['plotPos'])

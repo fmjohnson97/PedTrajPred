@@ -1,3 +1,5 @@
+import random
+
 from torch.utils.data import Dataset, DataLoader
 import torch
 import pandas as pd
@@ -9,8 +11,8 @@ from simpleTSNEPredict import SimpleRegNetwork
 
 
 class TSNEClusterGT(Dataset):
-    def __init__(self, N, cluster_num, split='train'):
-        self.data=pd.read_csv('ETH_UCY_GT_allDiffsData.csv')
+    def __init__(self, N, cluster_num, path, split='train'):
+        self.data=pd.read_csv(path)
         # self.data=pd.read_csv('just_Zara1_GT.csv')
         #'tsne_X', 'tsne_Y', 'N', 'cluster', 'pos'
         # breakpoint()
@@ -19,10 +21,17 @@ class TSNEClusterGT(Dataset):
         self.cluster_size=[0,10,29,33]
         self.N=N
         self.cluster_num=cluster_num
-        if split=='train':
-            self.data=self.data.iloc[:int(len(self.data)*.8)]
+        if split=='test':
+            self.data = self.data.iloc[int(len(self.data) * .5):]
+        elif split=='final_test':
+            print(len(self.data))
         else:
-            self.data = self.data.iloc[int(len(self.data) * .8):]
+            if split=='train':
+                self.data=self.data.iloc[:int(len(self.data)*.5)]
+            print(len(self.data))
+            self.augmentToIncreaseData()
+            print(len(self.data))
+
 
     def __len__(self):
         return len(self.data)
@@ -36,6 +45,59 @@ class TSNEClusterGT(Dataset):
         pos = [float(x.strip()) for x in pos if len(x.strip()) > 0]
 
         return torch.tensor(pos).float(), torch.tensor([tsneX, tsneY]).float()
+
+    def augmentToIncreaseData(self):
+        extra_data=[]
+        temp_data=self.data.values
+        random.shuffle(temp_data)
+        for row in temp_data:
+            if len(extra_data)>2000:
+                break
+            _, tsneX, tsneY, N, cluster, pos, dataset = row.tolist()
+            pos = pos[1:-1].strip().split('\n')
+            pos = [x.strip().split(' ') for x in pos]
+            pos = np.hstack(pos)
+            pos = np.array([float(x.strip()) for x in pos if len(x.strip()) > 0]).reshape(int(N),-1,2)
+            min_vals=np.eye(2)*np.min(np.min(pos,axis=1),axis=0)
+            max_vals=np.eye(2)*(1-np.max(np.max(pos,axis=1),axis=0))
+            min_val_offsets=[]
+            max_val_offsets=[]
+            for i in range(1,6):
+                # breakpoint()
+                if min_vals[0][0]>.25 and min_vals[1][1]>.25:
+                    min_val_offsets.append(min_vals/6 * i)
+                    min_val_offsets.append(np.diag(min_vals)/6 * i)
+                elif min_vals[0][0]>.25:
+                    min_val_offsets.append(min_vals[0] / 6 * i)
+                elif min_vals[1][1]>.25:
+                    min_val_offsets.append(min_vals[1] / 6 * i)
+                if max_vals[0][0] > .25 and max_vals[1][1] > .25:
+                    max_val_offsets.append(max_vals / 6 * i)
+                    max_val_offsets.append(np.diag(max_vals) / 6 * i)
+                elif max_vals[0][0] > .25:
+                    max_val_offsets.append(max_vals[0] / 6 * i)
+                elif max_vals[1][1] > .25:
+                    max_val_offsets.append(max_vals[1] / 6 * i)
+
+            # scaling_factors = [0.95, 1.05]
+            if len(min_val_offsets)>0:
+                min_val_offsets=np.vstack(min_val_offsets)
+                for offset in min_val_offsets:
+                    temp=pos-offset*.98
+                    extra_data.append([_,tsneX,tsneY,N,cluster,str(temp.reshape(-1)),dataset])
+                    # for factor in scaling_factors:
+                    #     extra_data.append([_,tsneX,tsneY,N,cluster,str((temp*factor).reshape(-1)),dataset])
+            if len(max_val_offsets)>0:
+                max_val_offsets = np.vstack(max_val_offsets)
+                for offset in max_val_offsets:
+                    temp = pos + offset * .98
+                    extra_data.append([_, tsneX, tsneY, N, cluster, str(temp.reshape(-1)), dataset])
+                    # for factor in scaling_factors:
+                    #     extra_data.append([_, tsneX, tsneY, N, cluster, str((temp * factor).reshape(-1)),dataset])
+        # breakpoint()
+        temp = pd.DataFrame(extra_data, columns=self.data.columns)
+        self.data=pd.concat((self.data,temp),axis=0)
+
 
 def getNewGroups(pos, social_thresh, maxN, diffs=None):
     # hard coding grid to be 3:4 (rows:columns) since that's aspect ratio of the images
@@ -87,7 +149,7 @@ def getNewGroups(pos, social_thresh, maxN, diffs=None):
 
     return new_pos, new_diffs, groups
 
-def makeTSNELabel(maxN, input_window):
+def makeTSNELabel(maxN, input_window, prefix):
     # global GT_TSNE_VALUES
     global TSNE_N_CUTOFFS
     global TSNE_BOUNDS
@@ -97,7 +159,7 @@ def makeTSNELabel(maxN, input_window):
     max_label = 0
     for i in range(1,maxN+1):
         # breakpoint()
-        data = pd.read_csv('allDiffsData_'+str(i)+'thresh_'+str(input_window)+'window.csv')
+        data = pd.read_csv('allDiffsData_RotAug_'+str(i)+'thresh_'+str(input_window)+'window.csv')
         temp = data.filter(['tsne_X', 'tsne_Y', 'newClusters'])
         class_bounds =[]
         for b in range(int(temp['newClusters'].max())+1):
@@ -116,14 +178,14 @@ def makeTSNELabel(maxN, input_window):
         temp.sort()
         TSNE_N_CUTOFFS[i] = [int(t) for t in temp]
 
-def getClusterGT(input_window, maxN):
+def getClusterGT(input_window, maxN, prefix):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     tsne_nets = []
     N = np.array(range(1, maxN + 1))
     for i in N:
         temp = SimpleRegNetwork(i*i * (input_window - 1) * 2)  # .eval()
         temp.load_state_dict(torch.load(
-            '/Users/faith_johnson/GitRepos/PedTrajPred/simpleRegNet_allDiffsData_' +
+            '/Users/faith_johnson/GitRepos/PedTrajPred/simpleRegNet_allDiffsData_RotAug_' +
             str(i) + 'people_' + str(input_window) + 'window.pt'))
         temp.eval()
         tsne_nets.append(temp.to(device))
@@ -131,7 +193,7 @@ def getClusterGT(input_window, maxN):
     CLUSTER_NUM = [0,10,29,33]
     temp=[]
     preds=[[],[],[]]
-    for name in ['UCY_Zara2','UCY_Zara1','ETH_Hotel','ETH']:
+    for name in ['ETH','ETH_Hotel','UCY_Zara1',]:#'UCY_Zara2',
         # dataset = PlainTrajData(name, input_window=input_window, output_window=12)
         dataset = SameSizeData(name, input_window=input_window, output_window=12)
         loader = DataLoader(dataset, batch_size=1, shuffle=False)
@@ -157,18 +219,18 @@ def getClusterGT(input_window, maxN):
                     temp.append([tsne.numpy()[0],tsne.numpy()[1],s.shape[0],tsne_class.item(),s.flatten(), name])
     # breakpoint()
     frame = pd.DataFrame(temp,columns=['tsne_X', 'tsne_Y', 'N', 'cluster', 'pos', 'dataset'], dtype=float)
-    frame.to_csv('ETH_UCY_GT_allDiffsData.csv')
+    frame.to_csv(prefix+'allDiffsData_RotAug_TSNEGT.csv')
     from matplotlib import pyplot as plt
     # breakpoint()
-    for i in range(len(preds)):
-        temp=np.stack(preds[i])
-        plt.scatter(temp[:,0],temp[:,1])
-        plt.title('Predicted Traj Clusters, N='+str(i))
-        plt.show()
+    # for i in range(len(preds)):
+    #     temp=np.stack(preds[i])
+    #     plt.scatter(temp[:,0],temp[:,1])
+    #     plt.title('Predicted Traj Clusters, N='+str(i))
+    #     plt.show()
     # frame.to_csv('just_Zara2_GT.csv')
 
 if __name__ == '__main__':
-    makeTSNELabel(3,8)
-    getClusterGT(8,3)
+    makeTSNELabel(3,8,'noZara2_fullDict_')
+    getClusterGT(8,3, 'noZara2_fullDict_')
     # x=TSNEClusterGT(1,0)
     # x.__getitem__(10)

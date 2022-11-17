@@ -11,12 +11,14 @@ from collections import defaultdict
 import pandas as pd
 from trajAugmentations import TrajAugs
 from PIL import Image
+from OpenTraj.utils import world2image
+from simpleNetworkPerCluster import SimplestNet
 
 def get_args():
     parser = argparse.ArgumentParser()
     # parser.add_argument('--num_clusters', default=50, type=int, help='number of clusters for kmeans')
     parser.add_argument('--input_window', default=8, type=int, help='number of frames for the input data')
-    parser.add_argument('--output_window', default=0, type=int, help='number of frames for the output data')
+    parser.add_argument('--output_window', default=12, type=int, help='number of frames for the output data')
     parser.add_argument('--batch_size', default=1, type=int)
     parser.add_argument('--xgrid_num', default=24, type=int)
     parser.add_argument('--ygrid_num', default=32, type=int)
@@ -35,7 +37,7 @@ def makeTSNELabel(maxN, input_window):
     max_label = 0
     for i in range(1,maxN+1):
         # breakpoint()
-        data = pd.read_csv('allDiffsData_'+str(i)+'thresh_'+str(input_window)+'window.csv')
+        data = pd.read_csv('allDiffsData_RotAug_'+str(i)+'thresh_'+str(input_window)+'window.csv')
         temp = data.filter(['tsne_X', 'tsne_Y', 'newClusters'])
         class_bounds =[]
         for b in range(int(temp['newClusters'].max())+1):
@@ -54,91 +56,11 @@ def makeTSNELabel(maxN, input_window):
         temp.sort()
         TSNE_N_CUTOFFS[i] = temp
 
-
-def get_spaced_colors(n):
-    max_value = 16581375  # 255**3
-    interval = int(max_value / n)
-    colors = [hex(I)[2:].zfill(6) for I in range(0, max_value, interval)]
-    return [(int(i[:2], 16), int(i[2:4], 16), int(i[4:], 16)) for i in colors]
-
 def get_spaced_inds(n, max_value, row_len):
     interval = int(max_value / n)
     inds = [I for I in range(0, max_value, interval)]
     return [[i//row_len,i%row_len] for i in inds]
 
-def makeColorGrid(min_coords, max_coords, args):
-    temp = np.flip(max_coords - min_coords)
-    global TSNE_CLUSTER_COLORS
-    TSNE_CLUSTER_COLORS = {}
-    colors=[]
-    from scipy.ndimage.interpolation import zoom
-    im=np.array([[[255,0,0],[255,127,0],[255,255,0],[0,255,0],[0,0,255],[127,0,255],[255,0,255]], [[80,0,0],[80,40,0],[80,80,0],[0,80,0],[0,0,80],[40,0,80],[80,0,80]]]).astype(np.uint8)
-    zoomed = zoom(im, ((temp[0] // 2 + 1), int((temp[1]) * (args.maxN + 1) // 7), 1), order=1)
-    inds=[range(x,x+int(temp[1]+1)) for x in range(0,zoomed.shape[1],int(temp[1]+1+temp[1]//args.maxN))]
-    colors=[zoomed[:,i,:] for i in inds]
-    # for n in range(2,args.maxN+1):
-    #     im = np.array([[MASTER_COLOR_LIST[n-2][0], MASTER_COLOR_LIST[n-2][1]], [MASTER_COLOR_LIST[n-2][2], MASTER_COLOR_LIST[n-2][3]]]).astype(np.uint8)
-    #     zoomed = zoom(im, ((temp[0]+1)//2, (temp[1]+1)//2, 1), order=1)
-    #     colors.append(zoomed)
-    #     plt.figure()
-    #     plt.imshow(im, interpolation='nearest')
-    #     plt.figure()
-    #     plt.imshow(zoomed, interpolation='nearest')
-    # plt.show()
-
-    #Solution 2
-    temp = get_spaced_colors(sum([len(x) for x in TSNE_BOUNDS.values()]) + 1)
-    temp.pop(0)
-    random.shuffle(temp)
-
-    for i in range(args.maxN):
-        # Solution 1
-        # temp=[]
-        # for center in TSNE_BOUNDS[i+1]:
-        #     # breakpoint()
-        #     temp.append(colors[i][int(center[0])][int(center[1])])
-        # TSNE_CLUSTER_COLORS[i+1]=temp
-
-        #Solution 2
-        TSNE_CLUSTER_COLORS[i + 1] = [np.array(t) for t in temp[:len(TSNE_N_CUTOFFS[i + 1])]]
-        for j in range(len(TSNE_N_CUTOFFS[i + 1])):
-            temp.pop(0)
-
-        #Solution 3
-        # randx=random.sample(list(range(colors[i].shape[0])),k=len(TSNE_N_CUTOFFS[i + 1]))
-        # randy = random.sample(list(range(colors[i].shape[1])), k=len(TSNE_N_CUTOFFS[i + 1]))
-        # TSNE_CLUSTER_COLORS[i + 1] = np.vsplit(colors[i][randx,randy],len(randx))
-
-        #Solution 4
-        # temp = []
-        # inds = get_spaced_inds(len(TSNE_N_CUTOFFS[i + 1]),colors[i].shape[0]*colors[i].shape[1],colors[i].shape[1])
-        # for j in inds:
-        #     temp.append(colors[i][j[0],j[1]])
-        # TSNE_CLUSTER_COLORS[i+1]=temp
-        # breakpoint()
-    return colors
-
-
-def getGridFill(pos, xgrid, ygrid, color, args):
-    # y dim change corresponds to alpha value; higher position = less opaque; lower position = more opaque
-    # breakpoint()
-    vals=np.zeros((args.xgrid_num, args.ygrid_num,3))
-    xinds = []
-    yinds = []
-    for p in pos:
-        for point in p:
-            xdifs=[point[1]-x for x in xgrid]
-            ydifs=[point[0]-y for y in ygrid]
-            try:
-                xinds.append(np.where(np.diff(np.sign(xdifs))!=0)[0][-1])
-                yinds.append(np.where(np.diff(np.sign(ydifs))!=0)[0][-1])
-            except Exception as e:
-                print(e)
-                breakpoint()
-    inds=np.unique(np.vstack([xinds,yinds]).T, axis=0)
-    for i in inds:
-        vals[i[0],i[1]]=[1,1,1]*color
-    return vals
 
 def getNewGroups(pos, diffs, args):
     # hard coding grid to be 3:4 (rows:columns) since that's aspect ratio of the images
@@ -199,17 +121,18 @@ def getNewGroups(pos, diffs, args):
         new_diffs.append(diffs[np.array(list(g))])
         allDiffs = []
         for i in range(new_pos[-1].shape[0]):
-            temp = np.concatenate((new_pos[-1][:i], new_pos[-1][i + 1:]), axis=0)
+            # breakpoint()
+            temp = np.concatenate((new_pos[-1][:i,:args.input_window,:], new_pos[-1][i+1:,:args.input_window,:]), axis=0)
             # hold = np.sum(new_pos[-1] ** 2, axis=1)
             # heading = np.arccos(np.sum(x[:-1, :] * x[1:, :], axis=1) / (hold[:-1] * hold[1:]) ** .5)
             if len(temp) > 0:
-                temp = new_pos[-1][i][1:] - temp[:, :-1, :]
+                temp = new_pos[-1][i,:args.input_window,:][1:] - temp[:, :-1, :]
                 # breakpoint()
                 allDiffs.append(
-                    np.hstack(np.concatenate((np.diff(new_pos[-1][i], axis=0).reshape(1, -1, 2) * 15, temp), axis=0)))
+                    np.hstack(np.concatenate((np.diff(new_pos[-1][i,:args.input_window,:], axis=0).reshape(1, -1, 2) * 15, temp), axis=0)))
             else:
                 # breakpoint()
-                allDiffs.append(np.diff(new_pos[-1][i], axis=0))
+                allDiffs.append(np.diff(new_pos[-1][i,:args.input_window,:], axis=0))
         new_allDiffs.append(torch.tensor(np.stack(allDiffs)).flatten())
 
     # breakpoint()
@@ -218,18 +141,20 @@ def getNewGroups(pos, diffs, args):
 
 if __name__ == '__main__':
     args = get_args()
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     makeTSNELabel(args.maxN, args.input_window)
     nets=[]
     N=np.array(range(1,args.maxN+1))
     for i in N:
         net = SimpleRegNetwork(i*i * (args.input_window-1) * 2).eval()
-        net.load_state_dict(torch.load('/Users/faith_johnson/GitRepos/PedTrajPred/simpleRegNet_allDiffsData_'+str(i)+'people_'+str(args.input_window)+'window.pt'))
+        net.load_state_dict(torch.load('/Users/faith_johnson/GitRepos/PedTrajPred/simpleRegNet_allDiffsData_RotAug_'+str(i)+'people_'+str(args.input_window)+'window.pt'))
         nets.append(net)
 
     tsne_preds=[]
     inputs=[]
     people_per_frame=[]
     frames=[]
+    traj_preds = []
     # colorMap=['maroon','r','tab:orange','y','lime','g','b','indigo','tab:purple','m']
 
     for name in ['ETH', 'ETH_Hotel', 'UCY_Zara1', 'UCY_Zara2']:
@@ -243,76 +168,104 @@ if __name__ == '__main__':
                 if data['diffs'].shape[-3]<args.maxN:
                     # breakpoint()
                     net=nets[data['diffs'].shape[-3]-1]
-                    pos = data['pos'][0].float()#.flatten()
+                    pos = data['pos'][0][:,:args.input_window,:].float()#.flatten()
+                    target = data['pos'][0][:,args.input_window:,:]
                     allDiffs = []
                     for i in range(pos.shape[0]):
-                        # breakpoint()
                         temp = np.concatenate((pos[:i], pos[i + 1:]), axis=0)
-                        # hold = np.sum(new_pos[-1] ** 2, axis=1)
-                        # heading = np.arccos(np.sum(x[:-1, :] * x[1:, :], axis=1) / (hold[:-1] * hold[1:]) ** .5)
                         if len(temp) > 0:
                             temp = pos[i][1:] - temp[:, -1, :]
-                            # breakpoint() #.reshape(1, -1, 2)
                             allDiffs.append(np.concatenate((np.diff(pos[i], axis=0) * 15, temp),axis=-1))
                         else:
-                            # breakpoint()
                             allDiffs.append(np.diff(pos[i], axis=0))
                     # breakpoint()
                     pos = torch.tensor(np.stack(allDiffs)).flatten()
                     people_per_frame.append(data['diffs'].shape[-3])
                     with torch.no_grad():
                         output = net(pos)
-                        tsne_preds.append([output.detach()])
-                        inputs.append(data['pos'].flatten())
-                    output=output.detach()
+                        c = np.argmin(np.sum((np.array(TSNE_BOUNDS[people_per_frame[-1]]) - output.numpy()) ** 2, axis=-1))
+                        trajnet = SimplestNet(args).to(device)
+                        trajnet.load_state_dict(torch.load('simpleNetTSNE_allDiffsData_RotAug_' + str(people_per_frame[-1]) + '_cluster' + str(c) + '.pt', map_location=device))
+                        traj, latent = trajnet(data['pos'][0, :, :args.input_window, :].reshape(people_per_frame[-1], -1).float())
+                    tsne_preds.append([output.detach()])
+                    inputs.append(data['pos'].flatten())
+                    traj_preds.append(traj.detach())
                     frames.append(data['frames'])
                 else:
-                    # for p in data['diffs'][0]:
-                    #     plt.plot(p[:, 0], p[:, 1])
-                    #     plt.scatter(p[0][0], p[0][1])
-                    # plt.show()
                     # breakpoint()
                     pos,allDiffs, diffs, groups = getNewGroups(data['pos'][0], data['diffs'][0], args)
                     people=[]
                     preds=[]
                     ins=[]
                     temp_frame=[]
+                    temp_trajs=[]
                     for i, p in enumerate(allDiffs):
                         net = nets[pos[i].shape[-3]-1]
                         people.append(pos[i].shape[-3])
                         with torch.no_grad():
                             # breakpoint()
                             output = net(p.flatten().float())
-                            ins.append(data['pos'][0][np.array(list(groups[i]))])
-                            preds.append(output.detach())
-                            temp_frame.append(data['frames'])
+                            c = np.argmin(np.sum((np.array(TSNE_BOUNDS[people[-1]]) - output.numpy()) ** 2, axis=-1))
+                            trajnet = SimplestNet(args).to(device)
+                            trajnet.load_state_dict(torch.load('simpleNetTSNE_allDiffsData_RotAug_' + str(people[-1]) + '_cluster' + str(c) + '.pt',map_location=device))
+                            traj, latent = trajnet(pos[i][:, :args.input_window, :].reshape(people[-1], -1).float())
+                        ins.append(pos[i])
+                        temp_trajs.append(traj.detach())
+                        preds.append(output.detach())
+                        temp_frame.append(data['frames'])
                     output = np.max(np.stack(preds), axis=0)
                     tsne_preds.append(preds)
                     inputs.append(ins)
                     people_per_frame.append(people)
                     frames.append(temp_frame)
+                    traj_preds.append(temp_trajs)
 
-
+        # breakpoint()
         print('Plotting Trajectories')
         augs=TrajAugs()
         for i, tpred in tqdm(enumerate(tsne_preds)):
-            vals=[]
             for j, t in enumerate(tpred):
                 n=people_per_frame[i]
                 pos = inputs[i]
                 frame = frames[i]
+                traj = traj_preds[i]
                 if type(n) is list:
                     n=n[j]
                     pos = pos[j]
                     frame=frame[j]
-                breakpoint()
-                dataset = PlainTrajData(frame[0][0], input_window=args.input_window, output_window=args.output_window,maxN=args.maxN)
-                im=dataset.getImages({'frames':torch.stack(frame[1:]).flatten().tolist()})
-                plt.imshow(im[0])
-                for p in pos.reshape(n,args.input_window,2):
-                    p=augs.rotate(p, -90)
-                    plt.plot(p[:,0]*640, p[:,1]*180, c='b')
-                plt.show()
+                    traj = traj[j]
+                # breakpoint()
+                if n>1:
+                    dataset = PlainTrajData(frame[0][0], input_window=args.input_window, output_window=args.output_window,maxN=args.maxN)
+                    ims=dataset.getImages({'frames':torch.stack(frame[1:]).flatten().tolist()})
+                    plt.figure()
+                    im = Image.fromarray(ims[0])
+                    im = im.rotate(-90, expand=True)
+                    plt.imshow(im)#, origin='lower')
+                    # pos=augs.rotate(pos.reshape(n,args.input_window,2),0)
+                    pos = pos.reshape(n,-1,2) * (dataset.max - dataset.min) + dataset.min
+                    for p in pos:
+                        p = world2image(p,dataset.H)
+                        plt.plot(p[:args.input_window,0], p[:args.input_window,1], c='b')
+                        plt.plot(p[args.input_window:, 0], p[args.input_window:, 1], c='g')
+                    traj = traj.reshape(n,-1,2) * (dataset.max - dataset.min) + dataset.min
+                    for t in traj:
+                        t=world2image(t,dataset.H)
+                        plt.plot(t[:, 0], t[:, 1], c='tab:orange')
+                    plt.figure()
+                    plt.imshow(im, origin='lower')
+                    plt.figure()
+                    plt.axis([0, 480, 0 ,640])
+                    for p in pos:
+                        p = world2image(p, dataset.H)
+                        plt.plot(p[:args.input_window, 0], p[:args.input_window, 1], c='b')
+                        plt.plot(p[args.input_window:, 0], p[args.input_window:, 1], c='g')
+                    for t in traj:
+                        t=world2image(t,dataset.H)
+                        plt.plot(t[:, 0], t[:, 1], c='tab:orange')
+                    plt.show()
+
+                # breakpoint()
         background=Image.open(name+'.png')
         plt.show()
 

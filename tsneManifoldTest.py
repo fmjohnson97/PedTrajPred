@@ -26,11 +26,11 @@ def test(net, loader):
     total_pos = []
     total_rot = []
     for i,data in enumerate(loader):
-        if i>len(loader)/2:
-            break
+        # if i>len(loader)/4:
+        #     break
         # breakpoint()
         pos, tsne, kmeans, originalPos = data
-        rot_traj = [aug.rotate(x.reshape(args.num_people,8,2), 30) for x in originalPos]
+        rot_traj = [aug.rotate(x.reshape(args.num_people,8,2), 75) for x in originalPos]
         # breakpoint()
         # if sum(sum(rot_traj<0))>0:
         #     breakpoint()
@@ -60,11 +60,11 @@ def test(net, loader):
 
 if __name__=='__main__':
     args = get_args()
-    dataset = TSNEGT(args.path + 'allDiffsDataLong45_' + str(args.num_people) + 'thresh_' + str(args.window) + 'window.csv')
+    dataset = TSNEGT(args.path + 'allDiffsData_' + str(args.num_people) + 'thresh_' + str(args.window) + 'window.csv')
     # dataset = TSNEGT(args.path + 'socData_' + str(args.num_people) + 'thresh_'+ str(args.num_people) +'group_8window.csv', args.num_clusters)
     loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True)
     net = SimpleRegNetwork(args.num_people * args.num_people * (args.window - 1) * 2)  # SimpleCatNetwork(32, args.num_clusters) #
-    net.load_state_dict(torch.load('simpleRegNet_allDiffsDataLong45_' + str(args.num_people) + 'people_' + str(args.window) + 'window.pt'))
+    net.load_state_dict(torch.load('simpleRegNet_allDiffsData_' + str(args.num_people) + 'people_' + str(args.window) + 'window.pt'))
     output, labels, pos, rot_pos = test(net, loader)
 
     # breakpoint()
@@ -72,11 +72,11 @@ if __name__=='__main__':
     plt.figure()
     output = np.vstack(output)
     labels = np.vstack(labels)
-    plt.scatter(labels[:, 0], labels[:, 1])
+    plt.scatter(labels[:, 0], labels[:, 1], alpha = .2)
     plt.title('Ground Truth TSNE, N=' + str(args.num_people))
 
     plt.figure()
-    plt.scatter(output[:, 0], output[:, 1])
+    plt.scatter(output[:, 0], output[:, 1], alpha=.2)
     plt.title('Predicted TSNE, N=' + str(args.num_people))
 
     plt.figure()

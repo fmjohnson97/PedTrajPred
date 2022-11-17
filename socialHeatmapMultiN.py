@@ -17,14 +17,23 @@ MASTER_COLOR_LIST=[[[255,0,0], [255,143,0], [110,7,7], [125,70,0]],
                    [[0,255,91], [0,247,255], [0,55,20], [0,42,43]],
                    [[0,84,255], [130,0,255], [0,28,85], [32,0,62]]]
 
+HELPFUL_COLORS = [[60,200,0],[255,143,0],
+                  [243,255,0],[255,0,0],
+                   [130,0,255],[0,247,255],
+                  [245, 135, 203],[171, 171, 171],
+
+                  [0,84,255],  [0,28,85], [32,0,62],
+                   [125,70,0], [255,151,0], [92,55,0],
+                  [98,103,0],[110,7,7],]
+
 def get_args():
     parser = argparse.ArgumentParser()
     # parser.add_argument('--num_clusters', default=50, type=int, help='number of clusters for kmeans')
     parser.add_argument('--input_window', default=8, type=int, help='number of frames for the input data')
     parser.add_argument('--output_window', default=0, type=int, help='number of frames for the output data')
     parser.add_argument('--batch_size', default=1, type=int)
-    parser.add_argument('--xgrid_num', default=24, type=int)
-    parser.add_argument('--ygrid_num', default=32, type=int)
+    parser.add_argument('--xgrid_num', default=60, type=int) #  right/left axis
+    parser.add_argument('--ygrid_num', default=45, type=int) # up/down axis
     parser.add_argument('--maxN', default=3, type=int)
     parser.add_argument('--social_thresh', default=0.9, type=float)#0.9 for trajData
     args = parser.parse_args()
@@ -40,7 +49,7 @@ def makeTSNELabel(maxN, input_window):
     max_label = 0
     for i in range(1,maxN+1):
         # breakpoint()
-        data = pd.read_csv('allDiffsData_'+str(i)+'thresh_'+str(input_window)+'window.csv')
+        data = pd.read_csv('allDiffsData_RotAug_'+str(i)+'thresh_'+str(input_window)+'window.csv')
         temp = data.filter(['tsne_X', 'tsne_Y', 'newClusters'])
         class_bounds =[]
         for b in range(int(temp['newClusters'].max())+1):
@@ -109,10 +118,10 @@ def makeColorGrid(min_coords, max_coords, args):
         for j in range(len(TSNE_N_CUTOFFS[i + 1])):
             temp.pop(0)
 
-        #Solution 3
+        # Solution 3
         # randx=random.sample(list(range(colors[i].shape[0])),k=len(TSNE_N_CUTOFFS[i + 1]))
         # randy = random.sample(list(range(colors[i].shape[1])), k=len(TSNE_N_CUTOFFS[i + 1]))
-        # TSNE_CLUSTER_COLORS[i + 1] = np.vsplit(colors[i][randx,randy],len(randx))
+        # TSNE_CLUSTER_COLORS[i + 1] = colors[i][randx,randy]#np.vsplit(colors[i][randx,randy],len(randx))
 
         #Solution 4
         # temp = []
@@ -228,7 +237,7 @@ if __name__ == '__main__':
     N=np.array(range(1,args.maxN+1))
     for i in N:
         net = SimpleRegNetwork(i*i * (args.input_window-1) * 2).eval()
-        net.load_state_dict(torch.load('/Users/faith_johnson/GitRepos/PedTrajPred/simpleRegNet_allDiffsData_'+str(i)+'people_'+str(args.input_window)+'window.pt'))
+        net.load_state_dict(torch.load('/Users/faith_johnson/GitRepos/PedTrajPred/simpleRegNet_allDiffsData_RotAug_'+str(i)+'people_'+str(args.input_window)+'window.pt'))
         nets.append(net)
 
     tsne_preds=[]
@@ -243,7 +252,7 @@ if __name__ == '__main__':
         tsne_preds=[]
         max_tsne=[-np.inf, -np.inf]
         min_tsne=[np.inf, np.inf]
-        for data in tqdm(loader):
+        for dataLen, data in tqdm(enumerate(loader)):
             if data['pos'].nelement() > 0:
                 # breakpoint()
                 if data['diffs'].shape[-3]<args.maxN:
@@ -303,6 +312,7 @@ if __name__ == '__main__':
                 if output[1] < min_tsne[1]:
                     min_tsne[1] = output[1]
 
+        # breakpoint()
         max_plot_coord = [1,1]#dataset.max
         min_plot_coord = [0,0]#dataset.min
         grids_plotX=np.linspace(min_plot_coord[0],max_plot_coord[0], args.xgrid_num)
@@ -318,7 +328,7 @@ if __name__ == '__main__':
         fig1.suptitle('Legend for Graph Colors')
         for i in range(args.maxN):
             ax = plt.subplot((args.maxN+1)//2,2,i+1)
-            df = pd.read_csv('/Users/faith_johnson/GitRepos/PedTrajPred/allDiffsData_'+str(i+1)+'thresh_'+str(args.input_window)+'window.csv')  # , index_col=0)
+            df = pd.read_csv('/Users/faith_johnson/GitRepos/PedTrajPred/allDiffsData_RotAug_'+str(i+1)+'thresh_'+str(args.input_window)+'window.csv')  # , index_col=0)
             tsneColor=[TSNE_CLUSTER_COLORS[i+1][np.argmin(np.sum((TSNE_BOUNDS[i+1]-point)**2,axis=-1))] for point in df.filter(['tsne_X','tsne_Y']).values]
             ax.scatter(df['tsne_X'].values,df['tsne_Y'].values,c=np.array(tsneColor)/255)
             ax.set_title(str(i+1)+' People')
@@ -358,11 +368,13 @@ if __name__ == '__main__':
             else:
                 vals=vals[0]
 
-            maps.append([vals,[n,np.argmin(np.sum((TSNE_BOUNDS[n]-t.numpy())**2,axis=-1))]])
-            # ax1.clear()
-            # ax1.set_title(name + ' pedestrian social patterns')
-            # ax1.imshow(vals.astype(np.uint8), interpolation='nearest', origin='lower')
-            # plt.pause(0.15)
+            # if i > (len(tsne_preds) // 6) * 0 and i <= (len(tsne_preds) // 6) * 1:
+            maps.append([vals, [n, np.argmin(np.sum((TSNE_BOUNDS[n] - t.numpy()) ** 2, axis=-1)), color]])
+
+            ax1.clear()
+            ax1.set_title(name + ' pedestrian social patterns')
+            ax1.imshow(vals.astype(np.uint8), interpolation='nearest', origin='lower')
+            plt.pause(0.15)
 
         background=Image.open(name+'.png')
         plt.figure()
@@ -372,13 +384,20 @@ if __name__ == '__main__':
         avg = avg / avg.max() * 255
         im = Image.fromarray(avg)
         im = im.resize((640, 480))
-        plt.imshow(im.rotate(-90), origin='lower', alpha=.7)
+        plt.imshow(im.rotate(-90), origin='lower', alpha=.8)
         plt.title('Environment Occupancy Map for ' + name)
         # plt.savefig(name+'_heatmap.png')
-        plt.show()
+        # plt.show()
         # breakpoint()
-        duplicates = [[],[[0,1,13],[6,8,9],[10,12],[22,23],[25,27]],[[4,17]]]
-        for i in range(3,args.maxN+1):
+        overlays={1:[[1,9]],
+                       2:[ [6,8,22]],#,[0,6,8],],
+                       3:[[5,27,8], [23,15,20,26], [12,24,16]]}
+        duplicates = [[[4,5]],[[2,3],[4,10],[5,9],[6,8],[13,14,18],[24,25]],[[20,26],[24,16],[5,27,31],[23,15]]]
+
+        for i in range(1,args.maxN+1):
+            overlay_temp=[[],[],[]]
+            overlay_color = [[], [], []]
+            #plotting the per N map
             plt.figure()
             plt.imshow(background, origin='lower')
             m=[m for m in maps if m[1][0]==i]
@@ -387,37 +406,97 @@ if __name__ == '__main__':
             avg=avg/avg.max()*255
             im = Image.fromarray(avg)
             im = im.resize((640, 480))
-            plt.imshow(im.rotate(-90), origin='lower', alpha=.7)
+            plt.imshow(im.rotate(-90), origin='lower', alpha=.8)
             plt.title('Environment Occupancy Map for N='+str(i))
             # plt.savefig('n'+str(i)+'_heatmap.png')
+            #plotting the per cluster/per merged behavior map
             skip=[]
             for j in range(len(TSNE_N_CUTOFFS[i])):
                 if j not in skip:
                     mergeInd=[k for k,d in enumerate(duplicates[i-1]) if j in d]
                     if len(mergeInd)>0:
                         plotm = [m[0] for m in m if m[1][1] in duplicates[i-1][mergeInd[0]]]
+                        col = [m[1][2] for m in m if m[1][1] in duplicates[i - 1][mergeInd[0]]]
                         skip.extend(duplicates[i-1][mergeInd[0]])
                         incl=','.join([str(dup) for dup in duplicates[i-1][mergeInd[0]]])
                         title = 'Environment Occupancy Map for N=' + str(i)+', Cluster=[' + incl+']'
                     else:
                         plotm=[m[0] for m in m if m[1][1]==j]
+                        col = [m[1][2] for m in m if m[1][1] == j]
                         title='Environment Occupancy Map for N=' + str(i)+', Cluster='+str(j)
+                    check=[k for k,c in enumerate(overlays[i]) if j in c]
+                    if len(check)>0:
+                        overlay_temp[check[0]].append(plotm)
+                        # overlay_color[check[0]].append(col[0].tolist())
+                        overlay_color[check[0]].append(HELPFUL_COLORS[0])
+                        HELPFUL_COLORS.pop(0)
                     if len(plotm)>0:
-                        plt.figure()
-                        plt.imshow(background, origin='lower')
+                        color = col[0].tolist()
+                        temp = np.sum(plotm, axis=0) // len(plotm)
+                        temp = Image.fromarray(temp.astype(np.uint8()))
+                        temp = temp.resize((640, 480)).rotate(-90)#,expand=True)
+                        temp = np.array(temp)
+                        new_im = np.array(background)[:,:,:3]
+                        for x in range(temp.shape[0]):
+                            for y in range(temp.shape[1]):
+                                if sum(temp[x,y])!=0:#.getpixel((i, j))) != 0:
+                                    new_im[x,y] = color #temp.getpixel((i, j))
+
+                        # plt.figure()
+                        # plt.imshow(background, origin='lower')
+                        # plt.imshow(new_im, origin='lower', alpha=.95)
+                        # plt.title(title)
+                        # plt.savefig('n' + str(i) + '_c' + str(j) + '_heatmap.png')
                         # breakpoint()
-                        # avg = np.sum(plotm, axis=0) #/ len(plotm)
-                        # color_map=(avg/avg.max())*TSNE_CLUSTER_COLORS[i][j]
-                        # breakpoint()
-                        color_map=np.mean(np.sum(plotm,axis=0)//len(plotm),axis=-1)
-                        color_map=color_map/color_map.max()*255
-                        im = Image.fromarray(color_map)
-                        im = im.resize((640, 480))
-                        plt.imshow(im.rotate(-90), origin='lower', alpha=.7)
-                        plt.title(title)
+
+
+                        # plt.figure()
+                        # plt.imshow(background, origin='lower')
+                        # # breakpoint()
+                        # # avg = np.sum(plotm, axis=0) #/ len(plotm)
+                        # # color_map=(avg/avg.max())*TSNE_CLUSTER_COLORS[i][j]
+                        # # breakpoint()
+                        # color_map=np.mean(np.sum(plotm,axis=0)//len(plotm),axis=-1)
+                        # color_map=color_map/color_map.max()*255
+                        # im = Image.fromarray(color_map)
+                        # im = im.resize((640, 480))
+                        # plt.imshow(im.rotate(-90), origin='lower', alpha=.7)
+                        # plt.title(title)
                         # plt.savefig('n'+str(i)+'_c'+str(j)+'_heatmap.png')
-            plt.show()
+
             # breakpoint()
+            #plotting the overlays
+            for o in range(len(overlay_temp)):
+                if len(overlay_temp[o])>0:
+                    col1=overlay_color[o][0]
+                    col2=overlay_color[o][1]
+                    map1=overlay_temp[o][0]
+                    map1 = np.sum(map1, axis=0) // len(map1)
+                    map1 = Image.fromarray(map1.astype(np.uint8()))
+                    map1 = map1.resize((640, 480)).rotate(-90)  # ,expand=True)
+                    map1 = np.array(map1)
+                    map2=overlay_temp[o][1]
+                    map2 = np.sum(map2, axis=0) // len(map2)
+                    map2 = Image.fromarray(map2.astype(np.uint8()))
+                    map2 = map2.resize((640, 480)).rotate(-90)  # ,expand=True)
+                    map2 = np.array(map2)
+                    new_im = np.array(background)[:,:,:3]
+                    for x in range(map1.shape[0]):
+                        for y in range(map1.shape[1]):
+                            if sum(map1[x, y]) != 0 and sum(map2[x, y]) == 0:
+                                new_im[x, y] = col1
+                            elif sum(map2[x, y]) != 0 and sum(map1[x, y]) == 0:
+                                new_im[x, y] = col2
+                            elif sum(map1[x, y]) != 0 and sum(map2[x, y]) != 0:
+                                new_im[x, y] = ((np.array(col1)+np.array(col2))//2).tolist()
+                    plt.figure()
+                    plt.imshow(background, origin='lower')
+                    plt.imshow(new_im, origin='lower', alpha=.75)
+                    incl = ','.join([str(dup) for dup in overlays[i][o]])
+                    title = 'Overlapped Environment Occupancy Map for N=' + str(i) + ', Cluster=[' + incl + ']'
+                    plt.title(title)
+                    plt.savefig('_'.join([str(dup) for dup in overlays[i][o]])+ '_overlay_heatmap_frame1.png')
+
 
 
 

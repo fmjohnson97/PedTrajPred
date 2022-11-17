@@ -80,7 +80,7 @@ class PlainTrajData(Dataset):
             self.trajectory = self.dataset.get_trajectories()
             self.groups = self.trajectory.indices
 
-        if split == 'train':
+        if split == 'train' or split==None:
             self.offset = 0
         else:
             self.offset = int((self.dataset.data['frame_id'].nunique()-self.output_window-self.input_window)*.8)
@@ -91,8 +91,10 @@ class PlainTrajData(Dataset):
         elif self.mode =='by_frame':
             if self.split == 'train':
                 return int((self.dataset.data['frame_id'].nunique()-self.output_window-self.input_window)*.8)
-            else:
+            elif self.split=='test':
                 return int((self.dataset.data['frame_id'].nunique()-self.output_window-self.input_window)*.2)
+            else:
+                return (self.dataset.data['frame_id'].nunique()-self.output_window-self.input_window)
 
 
     def __getitem__(self, item):

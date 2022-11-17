@@ -1,19 +1,20 @@
 from torch.utils.data import Dataset
-from OpenTraj_old.opentraj.toolkit.loaders.loader_eth import load_eth
-from OpenTraj_old.opentraj.toolkit.loaders.loader_crowds import load_crowds
+from OpenTraj.opentraj.toolkit.loaders.loader_eth import load_eth
+from OpenTraj.opentraj.toolkit.loaders.loader_crowds import load_crowds
 import numpy as np
 import torch
 import cv2
 from torch.utils.data import DataLoader
 from torchvision.transforms import Compose, Resize, GaussianBlur
-from OpenTraj_old.utils import world2image
+from OpenTraj.utils import world2image
 from collections import defaultdict
 
 class OpTrajData(Dataset):
     def __init__(self,dataset='ETH',mode='by_frame', image=False,input_window=4, output_window=8):
         super(OpTrajData,self).__init__()
         # self.root='/Users/faith_johnson/GitRepos/OpenTraj_old/'
-        self.root='/home/faith/PycharmProjects/PedTrajPredDict/OpenTraj_old/'
+        # self.root='/home/faith/PycharmProjects/PedTrajPredDict/OpenTraj/'
+        self.root='/Users/faith_johnson/GitRepos/PedTrajPred/OpenTraj/'
         self.name=dataset
         # H path, Vid Path, load_X arguments
         self.paths={'ETH':['datasets/ETH/seq_eth/H.txt','datasets/ETH/seq_eth/video.avi','/datasets/ETH/seq_eth/obsmat.txt'],

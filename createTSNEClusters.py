@@ -193,8 +193,8 @@ if __name__=='__main__':
     kmeans = KMeans(n_clusters=args.num_clusters, random_state=0).fit(data)
     centers = kmeans.cluster_centers_
 
-    plt.scatter(data[:, 0], data[:, 1], c=kmeans.labels_, alpha=0.5)
-    plt.scatter(centers[:, 0], centers[:, 1], c='r')
+    plt.scatter(data[:, 0], data[:, 1],  alpha=0.5)#c=kmeans.labels_,
+    # plt.scatter(centers[:, 0], centers[:, 1], c='r')
     plt.title(str(args.data).title()+" Raw Data and Centroids, "+str(args.num_clusters)+" Clusters, Len "+str(args.seq_len))
     plt.show()
 
@@ -209,7 +209,7 @@ if __name__=='__main__':
     #     plt.title('Cluster '+str(i))
     #     plt.show()
 
-    while (False):
+    while (True):
         coords = []
         fig = plt.figure()
         cid = fig.canvas.mpl_connect('button_press_event', onclick)

@@ -153,3 +153,7 @@ dmypy.json
 /TrajNet/trajnetplusplusdataset
 /TrajNet/trajnetplusplustools
 /*.pt
+*.png
+*.svg
+*.ai
+*.pdf
