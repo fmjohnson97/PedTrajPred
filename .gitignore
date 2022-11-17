@@ -157,3 +157,7 @@ dmypy.json
 *.svg
 *.ai
 *.pdf
+*.csv
+*.pt
+*.npy
+*.state
