@@ -28,6 +28,27 @@ CLUSTERS_PER_N = {1:10, 2:29, 3:33} # allDiffs8Long30 45 60,
 CLUSTER_NUM=[0,10,29,33]
 
 
+class SimplestNet_OLD(nn.Module):
+    def __init__(self, args):
+        super(SimplestNet_OLD, self).__init__()
+        self.fc1=nn.Linear((args.input_window)*2,32)
+        self.fc2 = nn.Linear(32, 64)
+        self.fc3 = nn.Linear(64+32, 32)
+        self.outfc=nn.Linear(32+32+64, args.output_window*2)
+        # self.fc1 = nn.Linear((args.input_window) * 4, 64)
+        # self.fc2 = nn.Linear(64, 64)
+        # self.fc3 = nn.Linear(64+64, 32)
+        # self.outfc=nn.Linear(32+2*64, args.output_window*2)
+        self.relu = nn.LeakyReLU()
+
+    def forward(self, x):
+        res1=self.relu(self.fc1(x))
+        res2=self.relu(self.fc2(res1))
+        res3 = self.relu(self.fc3(torch.cat((res2,res1), dim=-1)))
+        x=self.outfc(torch.cat((res3,res2,res1), dim=-1))
+        return x, torch.cat((res3,res2,res1), dim=-1)
+        # return res1
+
 class SimplestNet(nn.Module):
     def __init__(self, args):
         super(SimplestNet, self).__init__()
@@ -52,12 +73,12 @@ class SimplestNet(nn.Module):
 class SimplestUNet(nn.Module):
     def __init__(self, args):
         super(SimplestUNet, self).__init__()
-        self.efc1 = nn.Linear(args.input_window*2, 16)
-        self.efc2 = nn.Linear(16, 8)
-        self.efc3 = nn.Linear(16+8, 2)
-        self.dfc1 = nn.Linear(2, 4)
-        self.dfc2 = nn.Linear(4+8, 16)
-        self.dfc3 = nn.Linear(16+16, args.input_window*2)
+        self.efc1 = nn.Linear(args.input_window*2, 32)
+        self.efc2 = nn.Linear(32, 16)
+        self.efc3 = nn.Linear(16+32, 16)
+        self.dfc1 = nn.Linear(16, 16)
+        self.dfc2 = nn.Linear(16+16, 32)
+        self.dfc3 = nn.Linear(32+32, args.output_window*2)
         self.relu = nn.PReLU()
 
     def forward(self, x):
@@ -224,11 +245,11 @@ def train(args, net, device, N, cluster_num):
         if e%10==0:
             print("Epoch",e,': Loss =',np.mean(avgLoss))
         if np.mean(avgLoss)<min_loss:
-            torch.save(net.state_dict(),args.prefix+'simpleNetTSNE_allDiffsData_RotAug_'+str(N)+'_cluster'+str(cluster_num)+'.pt')
+            torch.save(net.state_dict(),args.prefix+'simpleNetTSNE_allDiffsData_RotAug_'+str(N)+'_cluster'+str(cluster_num)+'_diffArch.pt')
             min_loss=np.mean(avgLoss)
         if np.mean(avgLoss)<1.0e-4:# or abs(np.mean(last_loss[-500:])-np.mean(avgLoss))<1e-5:
             # breakpoint()
-            torch.save(net.state_dict(),args.prefix+'simpleNetTSNE_allDiffsData_RotAug_'+str(N)+'_cluster'+str(cluster_num)+'.pt')
+            torch.save(net.state_dict(),args.prefix+'simpleNetTSNE_allDiffsData_RotAug_'+str(N)+'_cluster'+str(cluster_num)+'_diffArch.pt')
             print("Epoch",e,': Loss =',np.mean(avgLoss))
             break
         last_loss.append(np.mean(avgLoss))
@@ -482,32 +503,7 @@ def testOne(args, device, name):
                 pos = pos - offset
                 traj, latent = trajnet(pos[:, :args.input_window, :].reshape(-1, (args.input_window) * 2).float().to(device))
                 loss = loss_func(traj, pos[:, args.input_window:, :].reshape(-1, args.output_window * 2).float().to(device))
-                if loss.item() > 0.001:
-                    # print(data['index'], data['diffs'].shape[-3], c)
-                    # print('\t', traj)
-                    temp_loss_track = [[data['diffs'].shape[-3], c, loss, traj]]
-                    if data['diffs'].shape[-3]==1:
-                        sample_num=10
-                    else:
-                        sample_num=10
-                    for new_c in random.sample(list(range(CLUSTER_NUM[data['diffs'].shape[-3]])), sample_num):
-                        try:
-                            trajnet.load_state_dict(torch.load(
-                                args.prefix + 'simpleNetTSNE_allDiffsData_RotAug_' + str(data['diffs'].shape[-3]) + '_cluster' + str(
-                                    new_c) + '.pt', map_location=device))
-                            new_traj, latent = trajnet(pos[:, :args.input_window, :].reshape(-1, (args.input_window) * 2).float().to(device))
-                            new_loss = loss_func(new_traj, pos[:, args.input_window:, :].reshape(-1,args.output_window * 2).float().to(
-                                device))
-                            temp_loss_track.append([data['diffs'].shape[-3], new_c, new_loss, new_traj])
-                        except Exception as e:
-                            print(e)
-                            pass
-                    losses=[l[2] for l in temp_loss_track]
-                    min_loss_ind = np.argmin(losses)
-                    loss=temp_loss_track[min_loss_ind][2]
-                    traj=temp_loss_track[min_loss_ind][-1]
-                    # print(data['diffs'].shape[-3], c, '-->', temp_loss_track[min_loss_ind][1])
-                    # breakpoint()
+
                 # if (data['diffs'].shape[-3]==2 and c==2) or data['diffs'].shape[-3]!=2:
                 total_loss.append(loss.item())
                 tsne_preds.append([output.detach()])
@@ -563,44 +559,7 @@ def testOne(args, device, name):
                     traj, latent = trajnet(pos[i][:, :args.input_window, :].reshape(-1, (args.input_window) * 2).float().to(device))
                     loss = loss_func(traj, pos[i][:, args.input_window:, :].reshape(-1, args.output_window * 2).float().to(device))
                     # breakpoint()
-                    if loss.item() > 0.001:
-                        # print(data['index'], people[-1], c)
-                        # print('\t',traj)
-                        temp_loss_track = [[people[-1], c, loss, traj]]
-                        if people[-1] == 1:
-                            sample_num = 10
-                        else:
-                            sample_num = 10
-                        for new_c in random.sample(list(range(CLUSTER_NUM[people[-1]])), sample_num):
-                            try:
-                                trajnet.load_state_dict(torch.load(
-                                    args.prefix + 'simpleNetTSNE_allDiffsData_RotAug_' + str(people[-1]) + '_cluster' + str(
-                                        new_c) + '.pt', map_location=device))
-                                new_traj, latent = trajnet(pos[i][:, :args.input_window, :].reshape(-1, (args.input_window) * 2).float().to(device))
-                                new_loss = loss_func(new_traj, pos[i][:, args.input_window:, :].reshape(-1,args.output_window * 2).float().to( device))
-                                temp_loss_track.append([people[-1], new_c, new_loss, new_traj])
-                            except Exception as e:
-                                print(e)
-                                pass
-                        losses = [l[2] for l in temp_loss_track]
-                        min_loss_ind = np.argmin(losses)
-                        loss = temp_loss_track[min_loss_ind][2]
-                        traj = temp_loss_track[min_loss_ind][-1]
-                        # print(people[-1], c, '-->', temp_loss_track[min_loss_ind][1])
-                        # breakpoint()
-                    inputs.append(pos[i])
-                    pred_loss.append(loss.item())
-                    temp_traj = traj.detach().cpu().reshape(-1, args.output_window, 2).cpu().numpy() + offset.numpy()
-                    traj_preds.append(temp_traj.reshape(-1, args.output_window * 2))
-                    tsne_preds.append(output.detach())
-                    frames.append(data['frames'])
-                    # breakpoint()
-                    temp_fde.append(loss_func(traj.reshape(people[-1],args.output_window,2)[:,-1,:],pos[i][:,-1,:]).item())
-                    unNormedOutput = traj.reshape(people[-1],args.output_window,2) * (dataset.max - dataset.min) + dataset.min  # (np.array(positions)-self.min)/(self.max-self.min)
-                    unNormedScene = pos[i][:, args.input_window:, :] * (dataset.max - dataset.min) + dataset.min
-                    unNormedLoss = loss_func(unNormedOutput, unNormedScene)
-                    temp_unNormLoss.append(unNormedLoss.item())
-                    temp_unNormFDE.append(loss_func(unNormedOutput[:,-1,:], unNormedScene[:,-1,:]).item())
+
                 # if (people[-1]==2 and c==2) or people[-1]!=2:
                 total_loss.append(np.mean(pred_loss))
                 fde.append(np.mean(temp_fde))
@@ -659,9 +618,9 @@ if __name__=='__main__':
         for n in range(1, args.maxN + 1):
             for c in range(0, CLUSTER_NUM[n]):
                 print('People:', n, 'Cluster:', c)
-                net = SimplestNet(args).to(device)
+                net = SimplestUNet(args).to(device)
                 try:
-                    net.load_state_dict(torch.load(args.prefix+'simpleNetTSNE_allDiffsData_RotAug_'+str(n)+'_cluster'+str(c)+'.pt', map_location=device))
+                    net.load_state_dict(torch.load(args.prefix+'simpleNetTSNE_allDiffsData_RotAug_'+str(n)+'_cluster'+str(c)+'_diffArch.pt', map_location=device))
                 except:
                     pass
                 net = train(args, net, device, n, c)
